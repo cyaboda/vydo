@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: media-studio-personal
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: MEDIA_STUDIO_TOKEN
+        sync: false

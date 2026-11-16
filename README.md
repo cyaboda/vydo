@@ -12,8 +12,8 @@ Se trata de una **página web**, no una aplicación de escritorio. La página y 
 
 ## Requisitos del servidor
 
-- Node.js 20+
-- `yt-dlp` actualizado, disponible en `PATH` (https://github.com/yt-dlp/yt-dlp)
+- Node.js 22+ (para integración moderna con yt-dlp)
+- `yt-dlp` actualizado con `yt-dlp-ejs`, disponible en `PATH` (https://github.com/yt-dlp/yt-dlp)
 - `ffmpeg` instalado y disponible en `PATH` (https://ffmpeg.org/)
 - Espacio temporal para archivos; los trabajos se eliminan tras ~20 minutos
 
@@ -33,7 +33,7 @@ $env:MEDIA_STUDIO_TOKEN='elige-una-clave-privada-de-al-menos-16-caracteres'
 node server.mjs
 ```
 
-Abre `http://127.0.0.1:3000` (solo para prueba local). Si falta alguna de las herramientas, la web se muestra pero la API avisa que debes instalarla. `npm install` **no es necesario**.
+Abre `http://127.0.0.1:3000` (solo para prueba local). Si falta alguna de las herramientas, la web se muestra pero la API avisa que debes instalarla. `npm install` **no es necesario**. yt-dlp actual necesita un motor JavaScript y el componente EJS; el Dockerfile ya incluye Node.js 22 y `yt-dlp-ejs`.
 
 ## Publicación web
 
@@ -43,6 +43,17 @@ Abre `http://127.0.0.1:3000` (solo para prueba local). Si falta alguna de las he
 4. Ejecuta `node server.mjs` e indica `HOST=0.0.0.0` y el puerto asignado por el proveedor.
 5. Publica el servicio detrás de HTTPS. Es necesario para enviar la clave privada y utilizar el portapapeles con seguridad.
 6. Revisa las políticas del proveedor: algunos prohíben determinadas descargas, o limitan uso de CPU, ancho de banda o tráfico multimedia.
+
+### Desplegar en Render con Docker
+
+1. Crea un **repositorio privado** de GitHub y sube estos archivos (sin comprimir).
+2. En [Render](https://dashboard.render.com/), elige **New → Blueprint** y conecta ese repositorio. Render leerá `render.yaml`.
+3. Selecciona el servicio y configura el secreto `MEDIA_STUDIO_TOKEN` con una contraseña fuerte de al menos 16 caracteres, distinta de tus contraseñas habituales.
+4. Confirma el despliegue. Una vez activo, Render proporciona una URL `https://....onrender.com` que abre tanto la interfaz como la API.
+5. Abre `/api/health` y verifica que `ytDlp` y `ffmpeg` sean `true`.
+6. Prueba con un video propio o autorizado, primero uno corto y pequeño.
+
+**Importante:** el archivo Blueprint solicita el plan `starter`, que es **de pago**. No actives un plan sin revisar previamente su precio. Para experimentar, puedes cambiarlo a `free` en `render.yaml`, pero Render Free tiene 512 MB de RAM, suspensión por inactividad y límites de ancho de banda, insuficientes para muchas conversiones. El servicio en la nube no garantiza que YouTube permita descargar desde las IP de Render. <https://render.com/docs/free>
 
 ### Ejemplo Docker
 

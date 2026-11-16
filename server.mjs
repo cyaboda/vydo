@@ -29,7 +29,7 @@ function safeJob(job){return {id:job.id,status:job.status,createdAt:job.createdA
 async function readJson(req){let chunks=[],length=0;for await(const chunk of req){length+=chunk.length;if(length>MAX_BODY)throw new Error('Solicitud demasiado grande.');chunks.push(chunk);}try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new Error('JSON inválido.');}}
 function outputName(file){return file.replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120);}
 function createArgs(job){
- const args=['--no-playlist','--no-progress','--no-warnings','--restrict-filenames','--max-filesize','500M','--socket-timeout','20','--retries','2','--fragment-retries','2','--ffmpeg-location',FFMPEG,'--paths',job.dir,'-o','media.%(ext)s'];
+ const args=['--js-runtimes','node','--no-playlist','--no-progress','--no-warnings','--restrict-filenames','--max-filesize','500M','--socket-timeout','20','--retries','2','--fragment-retries','2','--ffmpeg-location',FFMPEG,'--paths',job.dir,'-o','media.%(ext)s'];
  if(job.format==='mp4'){
    if(job.quality==='best')args.push('-f','bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best','--merge-output-format','mp4','--remux-video','mp4');
    else args.push('-f',`bv*[height<=${job.quality}][ext=mp4]+ba[ext=m4a]/b[height<=${job.quality}][ext=mp4]/best[height<=${job.quality}]`,'--merge-output-format','mp4','--remux-video','mp4');
