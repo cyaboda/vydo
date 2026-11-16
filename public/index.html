@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090a10"><meta name="description" content="MEDIA STUDIO: convierte y descarga tus videos autorizados de YouTube."><title>MEDIA STUDIO · Your media, your format</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head>
+<body>
+<div class="lights light-one"></div><div class="lights light-two"></div>
+<header class="topbar"><div class="logo"><span class="logo-mark">▸</span><span>MEDIA<span class="logo-light">STUDIO</span></span><span class="beta">PERSONAL</span></div><div class="topright"><span class="statusdot"></span> WEB CONVERTER <span class="version">V1.0</span></div></header>
+<main>
+  <div class="eyebrow"><span class="dash"></span> TU CONTENIDO. TU FORMATO.</div>
+  <h1>De enlace a archivo.<br><em>Sin complicaciones.</em></h1>
+  <p class="subtitle">Pega el enlace de un video que tengas autorización para descargar. Elige el formato y guarda tu archivo en segundos o minutos, según su tamaño.</p>
+  <section class="studio" aria-label="Convertidor de videos">
+    <div class="studio-top"><span><span class="tiny-circle"></span> CONVERTIDOR DE ENLACES</span><span class="chip">YOUTUBE</span></div>
+    <label for="video-url" class="field-label">ENLACE DEL VIDEO</label>
+    <div class="url-field"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7"/></svg><input id="video-url" type="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" spellcheck="false"><button id="paste-btn" type="button" class="paste">PEGAR</button></div>
+    <div class="two-col"><div><span class="field-label">FORMATO DE SALIDA</span><div class="format-grid" id="formats"><button data-format="mp4" class="selected" type="button">MP4 <small>VIDEO</small></button><button data-format="mp3" type="button">MP3 <small>AUDIO</small></button><button data-format="wav" type="button">WAV <small>LOSSLESS</small></button><button data-format="flac" type="button">FLAC <small>LOSSLESS</small></button><button data-format="m4a" type="button">M4A <small>AUDIO</small></button></div></div><div><label class="field-label" for="quality">CALIDAD</label><div class="select-wrap"><select id="quality"><option value="best">Mejor disponible</option><option value="1080">Hasta 1080p</option><option value="720">Hasta 720p</option><option value="480">Hasta 480p</option><option value="360">Hasta 360p</option></select></div><p class="hint" id="quality-hint">La resolución disponible depende del video.</p></div></div>
+    <button id="submit" class="primary" type="button"><span id="submit-label">PREPARAR DESCARGA</span><span aria-hidden="true">↗</span></button>
+    <div id="alert" class="alert" role="alert" hidden></div>
+    <div id="progress" class="progress" hidden><div class="progress-header"><span id="progress-text">Preparando...</span><span class="spinner"></span></div><div class="progress-track"><div class="progress-bar"></div></div><p>El procesamiento se realiza en el servidor. Mantén abierta esta pestaña.</p></div>
+    <div id="finished" class="finished" hidden><span class="success-icon">✓</span><div><strong>¡Archivo listo!</strong><p id="finished-name"></p></div><button id="download" class="download" type="button">DESCARGAR ↓</button></div>
+  </section>
+  <div class="below"><div><span class="mini-icon">◈</span><strong>FORMATOS FLEXIBLES</strong><p>Video y audio a tu medida.</p></div><div><span class="mini-icon">⌁</span><strong>SIN CUENTAS EXTERNAS</strong><p>Tu instancia personal, con clave.</p></div><div><span class="mini-icon">◇</span><strong>ARCHIVOS TEMPORALES</strong><p>Se eliminan automáticamente.</p></div></div>
+  <div class="notice"><strong>Uso autorizado.</strong> Descarga únicamente videos tuyos o cuyo propietario permita la descarga. No se garantiza compatibilidad con todos los enlaces ni se admiten listas, videos privados o contenido protegido.</div>
+</main>
+<footer><span>© MEDIA STUDIO</span><span>CRAFTED FOR YOUR MEDIA ◦ 2026</span></footer>
+<div id="gate" class="gate" aria-modal="true" role="dialog" aria-labelledby="gate-title"><div class="gate-panel"><div class="gate-logo">▸</div><h2 id="gate-title">Bienvenido a MEDIA STUDIO</h2><p>Introduce la clave privada configurada en tu servidor para acceder.</p><form id="login"><input id="secret" type="password" placeholder="Clave privada" required autocomplete="current-password"><button type="submit">ENTRAR →</button></form><p class="gate-error" id="gate-error" hidden>Clave incorrecta.</p></div></div>
+<script src="/app.js" defer></script></body></html>
