@@ -1,85 +1,56 @@
-# MEDIA STUDIO · Web personal
+# MEDIA STUDIO 2.1 · GitHub Pages + Cloudflare Worker + RapidAPI
 
-Interfaz + servidor web Node.js sin dependencias npm. Convierte **videos de YouTube que tengas derecho a descargar** a MP4, MP3, WAV, FLAC o M4A. Incluye clave privada, cola y limpieza automática de los archivos temporales.
+Proyecto web sin VPS. Permite solicitar descargas de **contenido de YouTube que el usuario tenga derecho a descargar**, a través de una API de terceros. La compatibilidad real no está garantizada hasta realizar una prueba con una clave de RapidAPI activa.
 
-## Arquitectura
+## Qué incluye
 
-```
-Navegador → Node.js (interfaz/API privada) → yt-dlp → FFmpeg → descarga autenticada
-```
+- `site/`: página estática para GitHub Pages; admite MP4, MP3 y M4A y selección de 360p, 480p, 720p y 1080p en MP4.
+- `worker/`: Cloudflare Worker que protege la clave de RapidAPI, valida YouTube, crea trabajos, consulta estados y recupera la URL temporal.
+- `tests/`: pruebas básicas del validador.
 
-Se trata de una **página web**, no una aplicación de escritorio. La página y la API se sirven desde la misma dirección para evitar problemas de CORS y configuración. Para acceder desde cualquier dispositivo, despliega el servicio Node.js en un hosting con procesos persistentes y espacio temporal (VPS/servicio Docker). **GitHub Pages por sí solo no puede ejecutar el procesamiento de enlaces.**
+## Proveedor a conectar
 
-## Requisitos del servidor
+[YouTube Downloader - Video Audio and Shorts by FlashData (RapidAPI)](https://rapidapi.com/flashdatadev/api/youtube-downloader-video-audio-and-shorts-by-flashdata). No confundir con **YouTube Download - FlashData**, producto diferente que devuelve solo MP4. Según el proveedor, el plan Basic gratis ofrece hasta 2 GB/mes, 50 MB por archivo y hasta 1080p. La API anunciada admite `POST /rapidapi/youtube-download/jobs`, `GET /jobs/{id}` y `GET /jobs/{id}/file`. El host exacto debe confirmarse en la pestaña **Endpoints** de RapidAPI antes de probar; puede diferir del nombre visible del producto. El valor preconfigurado de `RAPIDAPI_HOST` es una hipótesis basada en el nombre y **no se ha verificado**. La API podría cambiar sus planes, parámetros o políticas. Este proyecto aún no ha hecho ninguna descarga real.
 
-- Node.js 22+ (para integración moderna con yt-dlp)
-- `yt-dlp` actualizado con `yt-dlp-ejs`, disponible en `PATH` (https://github.com/yt-dlp/yt-dlp)
-- `ffmpeg` instalado y disponible en `PATH` (https://ffmpeg.org/)
-- Espacio temporal para archivos; los trabajos se eliminan tras ~20 minutos
+## Despliegue sin servidor propio
 
-## Iniciar y probar
+### 1. RapidAPI
+1. Crear cuenta e inscribirse en el plan BASIC de la API **YouTube Downloader - Video Audio and Shorts by FlashData**. Revisar los posibles cargos de RapidAPI antes de activar un plan.
+2. En **Endpoints**, copiar el host literal de `X-RapidAPI-Host` y la clave `X-RapidAPI-Key`. No compartir ni subir la clave a GitHub.
 
-**macOS/Linux:**
+### 2. Cloudflare Worker
+1. Abrir Cloudflare > **Workers & Pages** > **Create** > Worker. Crear `media-studio-api`.
+2. En **Edit code**, pegar `worker/index.js` y desplegar. Alternativamente usar Wrangler desde la carpeta `worker`.
+3. En **Settings > Variables and Secrets**, añadir:
+   - `RAPIDAPI_KEY` (Secret): clave de RapidAPI.
+   - `RAPIDAPI_HOST` (Text): host copiado de la pestaña Endpoints, sin `https://`.
+   - `ACCESS_TOKEN` (Secret): una contraseña larga y aleatoria creada por ti para uso personal.
+   - `ALLOWED_ORIGIN` (Text): origen exacto de GitHub Pages, por ejemplo `https://TUUSUARIO.github.io`, sin barra al final ni ruta. Para dominio propio usar el origen del dominio.
+4. Guardar y desplegar los cambios. El Worker es un **proxy de API**: no almacena ni convierte videos.
 
-```bash
-export MEDIA_STUDIO_TOKEN='elige-una-clave-privada-de-al-menos-16-caracteres'
-node server.mjs
-```
+### 3. GitHub Pages
+1. Crear un repositorio, por ejemplo `media-studio`.
+2. Subir **el contenido de `site/` a la raíz del repositorio** (no la carpeta `worker/` ni secretos).
+3. En GitHub > Settings > Pages > Deploy from a branch > `main` / `(root)` > Save.
+4. Abrir `https://TUUSUARIO.github.io/media-studio/`, entrar en **Configurar conexión** e introducir la URL pública del Worker y tu `ACCESS_TOKEN` (no la clave RapidAPI).
 
-**PowerShell (Windows):**
+## Límites y notas
 
-```powershell
-$env:MEDIA_STUDIO_TOKEN='elige-una-clave-privada-de-al-menos-16-caracteres'
-node server.mjs
-```
+- Los archivos proceden del almacenamiento del proveedor, no del Worker; evitas procesar medios grandes en la cuenta gratuita de Cloudflare.
+- Los enlaces devueltos son temporales; el navegador puede abrir el archivo en otra pestaña según el proveedor y los encabezados del almacenamiento. Usa Guardar como si fuera necesario.
+- El frontend no recupera por sí solo trabajos pendientes después de cerrar la pestaña. La consulta se puede cancelar, pero el trabajo en el proveedor podría continuar.
+- Solo está implementada la integración de MP4, MP3 y M4A. WAV y FLAC no forman parte de esta entrega.
+- La contraseña de acceso del Worker es un control simple de uso personal, no un sistema de cuentas. Protege el token y rota si se filtra.
+- CORS es una protección del navegador, **no autenticación**. El Worker también exige `ACCESS_TOKEN`.
+- Descargas de YouTube: respeta los permisos del titular, los derechos de autor y las condiciones de la plataforma. Los proveedores de terceros pueden fallar o cambiar.
+- Ejecutar pruebas: `npm test` (Node.js 20+).
 
-Abre `http://127.0.0.1:3000` (solo para prueba local). Si falta alguna de las herramientas, la web se muestra pero la API avisa que debes instalarla. `npm install` **no es necesario**. yt-dlp actual necesita un motor JavaScript y el componente EJS; el Dockerfile ya incluye Node.js 22 y `yt-dlp-ejs`.
+## Diagnóstico
 
-## Publicación web
+- `401`: `ACCESS_TOKEN` equivocado.
+- `403 Origen no autorizado`: `ALLOWED_ORIGIN` incorrecto, revisa protocolo y dominio exactos.
+- `503 Faltan secretos`: configura `ACCESS_TOKEN` y `RAPIDAPI_KEY`.
+- `502` o respuesta API inesperada: confirma `RAPIDAPI_HOST` en RapidAPI.
+- Error de límite: el archivo o consumo mensual superó el plan del proveedor.
 
-1. Sube el proyecto completo a un repositorio privado de GitHub.
-2. Elige hosting que permita ejecutar Node.js, `yt-dlp` y FFmpeg. Una VPS o contenedor con disco temporal es adecuado. No funcionará como descargador en GitHub Pages ni en una plataforma exclusivamente estática.
-3. Configura `MEDIA_STUDIO_TOKEN` como **secreto** en el proveedor. No lo añadas al código ni al repositorio.
-4. Ejecuta `node server.mjs` e indica `HOST=0.0.0.0` y el puerto asignado por el proveedor.
-5. Publica el servicio detrás de HTTPS. Es necesario para enviar la clave privada y utilizar el portapapeles con seguridad.
-6. Revisa las políticas del proveedor: algunos prohíben determinadas descargas, o limitan uso de CPU, ancho de banda o tráfico multimedia.
-
-### Desplegar en Render con Docker
-
-1. Crea un **repositorio privado** de GitHub y sube estos archivos (sin comprimir).
-2. En [Render](https://dashboard.render.com/), elige **New → Blueprint** y conecta ese repositorio. Render leerá `render.yaml`.
-3. Selecciona el servicio y configura el secreto `MEDIA_STUDIO_TOKEN` con una contraseña fuerte de al menos 16 caracteres, distinta de tus contraseñas habituales.
-4. Confirma el despliegue. Una vez activo, Render proporciona una URL `https://....onrender.com` que abre tanto la interfaz como la API.
-5. Abre `/api/health` y verifica que `ytDlp` y `ffmpeg` sean `true`.
-6. Prueba con un video propio o autorizado, primero uno corto y pequeño.
-
-**Importante:** el archivo Blueprint solicita el plan `starter`, que es **de pago**. No actives un plan sin revisar previamente su precio. Para experimentar, puedes cambiarlo a `free` en `render.yaml`, pero Render Free tiene 512 MB de RAM, suspensión por inactividad y límites de ancho de banda, insuficientes para muchas conversiones. El servicio en la nube no garantiza que YouTube permita descargar desde las IP de Render. <https://render.com/docs/free>
-
-### Ejemplo Docker
-
-```bash
-docker build -t media-studio .
-docker run --rm -p 3000:3000 -e MEDIA_STUDIO_TOKEN='TU_CLAVE_PRIVADA_LARGA' media-studio
-```
-
-## Seguridad y límites
-
-- Los enlaces se normalizan a videos individuales de dominios oficiales de YouTube; no se aceptan URLs arbitrarias, listas ni hosts externos (reduce SSRF).
-- Las operaciones requieren clave, enviada en cabecera `Authorization`; la interfaz guarda la clave solo en `sessionStorage` del navegador.
-- No se manipulan cookies de YouTube, sesiones de terceros, firmas ni verificaciones de acceso.
-- Cola pequeña: 1 procesamiento a la vez, hasta 3 en espera. Límite de archivo solicitado: 500 MB; límite de tiempo del proceso: 10 minutos.
-- Las descargas completas se almacenan temporalmente en el servidor. El navegador recibe el archivo al finalizar; algunos navegadores pueden necesitar memoria considerable para archivos grandes.
-- El estado del trabajo se mantiene en RAM. Un reinicio del servidor cancela trabajos, y los temporales antiguos deberían limpiarse en el despliegue o mediante cron.
-- La descarga solo es viable si YouTube permite recuperar el medio en ese entorno. Los videos pueden fallar por bloqueos, cambios de YouTube, formatos indisponibles o limitaciones del proveedor.
-
-## Comandos
-
-```bash
-npm test
-npm run check
-npm start
-```
-
-## Uso
-
-Utiliza únicamente videos propios, con licencias que permitan descargarlos o con autorización del titular. YouTube puede imponer restricciones adicionales según el contenido y sus condiciones de servicio.
+> Estado: **proyecto implementado y validación de enlace probada**, pero pendiente de conectar tu cuenta RapidAPI y verificar descarga real, endpoints y calidad de respuesta.

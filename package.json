@@ -1,9 +1,1 @@
-{
-  "name": "media-studio",
-  "version": "1.1.0",
-  "private": true,
-  "type": "module",
-  "description": "Personal web video/audio downloader for authorized YouTube content",
-  "scripts": {"start":"node server.mjs","test":"node --test","check":"node --check server.mjs"},
-  "engines":{"node":">=22"}
-}
+{"name":"media-studio-web-api","version":"2.1.0","private":true,"type":"module","scripts":{"test":"node --test"}}

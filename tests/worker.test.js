@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {validateYoutube} from '../worker/index.js';
+test('accepts exact YouTube hosts and valid paths',()=>{assert.equal(validateYoutube('https://www.youtube.com/watch?v=jNQXAC9IVRw'),true);assert.equal(validateYoutube('https://youtu.be/jNQXAC9IVRw'),true);assert.equal(validateYoutube('https://www.youtube.com/shorts/jNQXAC9IVRw'),true)});
+test('rejects deceptive hosts or schemes',()=>{for(const url of ['https://youtube.com.evil.org/watch?v=jNQXAC9IVRw','http://youtube.com/watch?v=jNQXAC9IVRw','https://youtube.com/watch?v=bad','https://localhost/'])assert.equal(validateYoutube(url),false,url)});
