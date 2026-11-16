@@ -1,56 +1,110 @@
-# MEDIA STUDIO 2.1 · GitHub Pages + Cloudflare Worker + RapidAPI
+# vydo 3.0
 
-Proyecto web sin VPS. Permite solicitar descargas de **contenido de YouTube que el usuario tenga derecho a descargar**, a través de una API de terceros. La compatibilidad real no está garantizada hasta realizar una prueba con una clave de RapidAPI activa.
+Aplicación web de código abierto para descargar videos de YouTube que tengas autorización para descargar y convertir su audio. Una sola aplicación Node.js sirve la interfaz y ejecuta **yt-dlp + FFmpeg**. Licencia MIT; las licencias de esas herramientas y los derechos sobre el contenido son independientes.
 
-## Qué incluye
+- MP4 con video H.264 y audio AAC: **360p, 480p, 720p y 1080p**, solo cuando esa altura está disponible. No reescala ni sustituye la resolución solicitada.
+- Audio **MP3, WAV (PCM), M4A (AAC) y FLAC**. Convertir una fuente con pérdida a FLAC/WAV no restaura su calidad original.
+- Miniatura, título, duración, formatos disponibles y progreso real por fase. Descarga del archivo por streaming, sin cargarlo completo en la memoria del navegador.
+- Clave de instancia, sesiones HttpOnly, trabajos aislados por sesión, cola limitada, cancelación y limpieza automática.
 
-- `site/`: página estática para GitHub Pages; admite MP4, MP3 y M4A y selección de 360p, 480p, 720p y 1080p en MP4.
-- `worker/`: Cloudflare Worker que protege la clave de RapidAPI, valida YouTube, crea trabajos, consulta estados y recupera la URL temporal.
-- `tests/`: pruebas básicas del validador.
+## Arranque con Docker Compose
 
-## Proveedor a conectar
+Requisitos: Docker Engine con Compose. No hace falta contratar servicios.
 
-[YouTube Downloader - Video Audio and Shorts by FlashData (RapidAPI)](https://rapidapi.com/flashdatadev/api/youtube-downloader-video-audio-and-shorts-by-flashdata). No confundir con **YouTube Download - FlashData**, producto diferente que devuelve solo MP4. Según el proveedor, el plan Basic gratis ofrece hasta 2 GB/mes, 50 MB por archivo y hasta 1080p. La API anunciada admite `POST /rapidapi/youtube-download/jobs`, `GET /jobs/{id}` y `GET /jobs/{id}/file`. El host exacto debe confirmarse en la pestaña **Endpoints** de RapidAPI antes de probar; puede diferir del nombre visible del producto. El valor preconfigurado de `RAPIDAPI_HOST` es una hipótesis basada en el nombre y **no se ha verificado**. La API podría cambiar sus planes, parámetros o políticas. Este proyecto aún no ha hecho ninguna descarga real.
+```sh
+cp .env.example .env
+# Sustituye VYDO_TOKEN por un secreto aleatorio (mínimo 24 caracteres).
+# Puedes generarlo con: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+docker compose up --build -d
+```
 
-## Despliegue sin servidor propio
+Abre `http://localhost:3000`. La aplicación se vincula al loopback del host. Entra con la clave configurada. Nunca publiques `.env`.
 
-### 1. RapidAPI
-1. Crear cuenta e inscribirse en el plan BASIC de la API **YouTube Downloader - Video Audio and Shorts by FlashData**. Revisar los posibles cargos de RapidAPI antes de activar un plan.
-2. En **Endpoints**, copiar el host literal de `X-RapidAPI-Host` y la clave `X-RapidAPI-Key`. No compartir ni subir la clave a GitHub.
+Para publicarla en Internet, configura un proxy inverso HTTPS delante del puerto 3000, `PUBLIC_ORIGIN=https://tu-dominio` y `COOKIE_SECURE=true`, y vuelve a crear el contenedor. El origen incluye esquema y dominio, sin ruta ni barra final. No confíes en encabezados `X-Forwarded-*` para determinar el origen. `render.yaml` es una alternativa de configuración, sin contratación ni despliegue automático desde este proyecto.
 
-### 2. Cloudflare Worker
-1. Abrir Cloudflare > **Workers & Pages** > **Create** > Worker. Crear `media-studio-api`.
-2. En **Edit code**, pegar `worker/index.js` y desplegar. Alternativamente usar Wrangler desde la carpeta `worker`.
-3. En **Settings > Variables and Secrets**, añadir:
-   - `RAPIDAPI_KEY` (Secret): clave de RapidAPI.
-   - `RAPIDAPI_HOST` (Text): host copiado de la pestaña Endpoints, sin `https://`.
-   - `ACCESS_TOKEN` (Secret): una contraseña larga y aleatoria creada por ti para uso personal.
-   - `ALLOWED_ORIGIN` (Text): origen exacto de GitHub Pages, por ejemplo `https://TUUSUARIO.github.io`, sin barra al final ni ruta. Para dominio propio usar el origen del dominio.
-4. Guardar y desplegar los cambios. El Worker es un **proxy de API**: no almacena ni convierte videos.
+**GitHub Pages no ejecuta Node, yt-dlp ni FFmpeg.** Esta aplicación necesita un servidor o contenedor con procesos y almacenamiento temporal. Los Workers convencionales tampoco sustituyen el motor de conversión.
 
-### 3. GitHub Pages
-1. Crear un repositorio, por ejemplo `media-studio`.
-2. Subir **el contenido de `site/` a la raíz del repositorio** (no la carpeta `worker/` ni secretos).
-3. En GitHub > Settings > Pages > Deploy from a branch > `main` / `(root)` > Save.
-4. Abrir `https://TUUSUARIO.github.io/media-studio/`, entrar en **Configurar conexión** e introducir la URL pública del Worker y tu `ACCESS_TOKEN` (no la clave RapidAPI).
+## Desarrollo local
 
-## Límites y notas
+Node.js 22+ (validado con 24.22.1), Python 3.10+, FFmpeg con `libx264`, `libmp3lame`, AAC y FLAC. Instala yt-dlp con sus componentes EJS:
 
-- Los archivos proceden del almacenamiento del proveedor, no del Worker; evitas procesar medios grandes en la cuenta gratuita de Cloudflare.
-- Los enlaces devueltos son temporales; el navegador puede abrir el archivo en otra pestaña según el proveedor y los encabezados del almacenamiento. Usa Guardar como si fuera necesario.
-- El frontend no recupera por sí solo trabajos pendientes después de cerrar la pestaña. La consulta se puede cancelar, pero el trabajo en el proveedor podría continuar.
-- Solo está implementada la integración de MP4, MP3 y M4A. WAV y FLAC no forman parte de esta entrega.
-- La contraseña de acceso del Worker es un control simple de uso personal, no un sistema de cuentas. Protege el token y rota si se filtra.
-- CORS es una protección del navegador, **no autenticación**. El Worker también exige `ACCESS_TOKEN`.
-- Descargas de YouTube: respeta los permisos del titular, los derechos de autor y las condiciones de la plataforma. Los proveedores de terceros pueden fallar o cambiar.
-- Ejecutar pruebas: `npm test` (Node.js 20+).
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+export PATH="$PWD/.venv/bin:$PATH"
+export VYDO_TOKEN="tu-clave-aleatoria-de-al-menos-24-caracteres"
+npm start
+```
 
-## Diagnóstico
+En PowerShell usa `.venv\Scripts\pip.exe`, añade `.venv\Scripts` al `PATH` y configura `$env:VYDO_TOKEN`. También puedes indicar rutas absolutas en `YTDLP_BIN` y `FFMPEG_BIN`. yt-dlp usa el mismo ejecutable Node que el servidor. El binario FFmpeg debe estar instalado en el servidor, no en el navegador.
 
-- `401`: `ACCESS_TOKEN` equivocado.
-- `403 Origen no autorizado`: `ALLOWED_ORIGIN` incorrecto, revisa protocolo y dominio exactos.
-- `503 Faltan secretos`: configura `ACCESS_TOKEN` y `RAPIDAPI_KEY`.
-- `502` o respuesta API inesperada: confirma `RAPIDAPI_HOST` en RapidAPI.
-- Error de límite: el archivo o consumo mensual superó el plan del proveedor.
+El Dockerfile fija la versión de Node y `requirements.txt` fija las dependencias Python. Los paquetes del sistema Debian reciben sus actualizaciones del repositorio de la distribución; no se promete una imagen idéntica byte a byte. No hay dependencias npm de producción. Actualiza yt-dlp y EJS juntos y repite la prueba autorizada cuando YouTube cambie.
 
-> Estado: **proyecto implementado y validación de enlace probada**, pero pendiente de conectar tu cuenta RapidAPI y verificar descarga real, endpoints y calidad de respuesta.
+## Uso y límites
+
+1. Accede con la clave de la instancia.
+2. Pega un enlace a un video individual y confirma tu autorización.
+3. Analiza el enlace. La vista previa caduca a los 10 minutos.
+4. Elige uno de los formatos y una resolución disponible para MP4.
+5. Espera a que terminen la descarga y la conversión, y guarda el archivo.
+
+La descarga puede informar porcentajes separados para video y audio; la conversión informa su propio porcentaje de FFmpeg. Las fases de preparación sin medición se muestran indeterminadas. Puedes cancelar un trabajo; recargar recupera su identificador en la misma sesión/pestaña.
+
+Valores predeterminados: **1 trabajo activo + 3 en espera**, 1 análisis simultáneo, 30 minutos de duración por video, 512 MiB de espacio por trabajo (origen y salida sumados), 10 minutos por proceso de descarga/conversión y 2 minutos por análisis. El monitor de disco se ejecuta cada segundo, por lo que puede existir un pequeño exceso transitorio; Compose además limita `/tmp` a 1 GiB. Hay un máximo de 32 registros de trabajos y 128 sesiones. No es un servicio multiusuario de gran escala.
+
+Los archivos se eliminan 20 minutos después de finalizar, con comprobación cada 30 segundos. Los fallidos/cancelados se limpian al terminar sus procesos. Una descarga abierta impide borrar su archivo hasta cerrar la respuesta. Al apagar se cancelan procesos y se limpia el directorio de la instancia. Al arrancar se limpian directorios `vydo-*` abandonados de más de 24 horas; el contenedor usa almacenamiento temporal sin persistencia. Reiniciar pierde sesiones, cola y archivos.
+
+La sesión dura 8 horas. La clave compartida proporciona acceso personal o de un equipo de confianza; no hay cuentas, recuperación de contraseña ni facturación. Para automatizar se admite `Authorization: Bearer <VYDO_TOKEN>`; esos clientes comparten un propietario de trabajos. El navegador usa una cookie HttpOnly y no guarda la clave en localStorage/sessionStorage. Solo guarda el ID del trabajo en sessionStorage.
+
+No se admiten listas, directos, contenido privado, DRM ni contenido que requiera autenticación o eludir una restricción. No hay cookies importadas, credenciales de YouTube, proxies de evasión ni APIs comerciales. Un bloqueo de YouTube devuelve un error y no se intenta sortearlo.
+
+## Pruebas
+
+```sh
+npm test
+# Prueba adicional de los cinco formatos con un origen sintético real:
+FFMPEG_BIN=/usr/bin/ffmpeg npm test
+# Navegador, con motor de prueba aislado:
+npm install --no-save playwright@1.62.1
+npx playwright install chromium
+node scripts/ui-check.mjs
+```
+
+El chequeo de navegador cubre acceso, vista previa, progreso, descarga y pantalla móvil; usa un motor simulado y no demuestra conexión con YouTube. `BROWSER_BIN` permite seleccionar un Chrome/Chromium instalado. `UI_OUTPUT_DIR` cambia la ubicación de las capturas.
+
+La prueba de red es **optativa** y requiere contenido autorizado:
+
+```sh
+VYDO_TEST_AUTHORIZED=yes VYDO_TEST_URL='https://www.youtube.com/watch?v=TU_VIDEO_ID' npm run test:live
+# Todas las variantes, en una sola ejecución:
+VYDO_TEST_AUTHORIZED=yes VYDO_TEST_URL='https://www.youtube.com/watch?v=TU_VIDEO_ID' \
+VYDO_TEST_FORMATS='mp4:360,mp4:480,mp4:720,mp4:1080,mp3,wav,m4a,flac' npm run test:live
+```
+
+El script comprueba análisis, API de trabajos, descarga HTTP, tamaño y decodificación completa con FFmpeg. Verifica la altura solicitada en MP4. Limpia los archivos al salir. `VYDO_TEST_REPORT` permite guardar el informe JSON. La prueba no debe ejecutarse automáticamente sobre enlaces arbitrarios.
+
+La CI ejecuta pruebas, conversiones sintéticas, navegador y arranque Docker. Consulta [el diagnóstico y la migración](docs/migration.md) y [la evidencia de validación](docs/validation.md).
+
+## API
+
+| Método y ruta | Resultado |
+| --- | --- |
+| `GET /api/health` | Herramientas instaladas, 503 si falta alguna |
+| `POST /api/session` | `{password}` crea cookie de sesión |
+| `GET /api/session` / `DELETE /api/session` | Comprueba/cierra sesión |
+| `POST /api/preview` | `{url, authorized:true}` devuelve `preview` |
+| `POST /api/jobs` | `{url, previewId, format, quality, authorized:true}` devuelve `job` |
+| `GET /api/jobs/:id` | Estado y progreso de fase |
+| `DELETE /api/jobs/:id` | Cancela trabajo |
+| `GET /api/jobs/:id/download` | Archivo adjunto con autenticación |
+
+Los POST requieren JSON. La API solo acepta enlaces HTTPS canónicos de hosts exactos de YouTube y los normaliza antes de pasarlos como argumentos a yt-dlp, sin shell. Hay límites de cuerpo, salida de procesos, consultas de metadatos, intentos de acceso y trabajos. No se ofrecen URLs firmadas del proveedor al navegador.
+
+## Diagnóstico de fallos
+
+- **401:** inicia sesión de nuevo o revisa el token.
+- **403:** revisa `PUBLIC_ORIGIN`; si el error es de YouTube, respeta la restricción.
+- **429:** espera a que se libere capacidad o termine la ventana de un minuto.
+- **503:** faltan yt-dlp/FFmpeg o no se pueden ejecutar.
+- **Formato no disponible:** analiza de nuevo; la disponibilidad puede cambiar entre análisis y descarga.
+- **Error de procesamiento:** revisa versiones de las herramientas, espacio y conectividad. No se garantiza disponibilidad universal ni futura para todos los videos, regiones o servidores.

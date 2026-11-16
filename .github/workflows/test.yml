@@ -1,0 +1,34 @@
+name: tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: npm test
+        env:
+          FFMPEG_BIN: /usr/bin/ffmpeg
+      - run: npm install --no-save playwright@1.62.1
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/ui-check.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-screenshots
+          path: test-results/
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t vydo:test .
+      - run: |
+          docker run -d --name vydo --init -p 3000:3000 -e VYDO_TOKEN=ci-only-token-at-least-24-characters vydo:test
+          for i in $(seq 1 20); do curl --fail http://localhost:3000/api/health && exit 0; sleep 2; done
+          docker logs vydo
+          exit 1

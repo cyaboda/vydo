@@ -1,0 +1,19 @@
+services:
+  vydo:
+    build: .
+    init: true
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      VYDO_TOKEN: ${VYDO_TOKEN:?Set a random access token of at least 24 characters}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    read_only: true
+    tmpfs:
+      - /tmp:size=1G,uid=1000,gid=1000,mode=0700
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 2
+    restart: unless-stopped
