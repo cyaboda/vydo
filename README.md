@@ -1,6 +1,6 @@
 # vydo 3.3
 
-Plataforma de código abierto para descargar contenido autorizado de YouTube con **yt-dlp y FFmpeg**. Compacta el diseño aprobado al 100 % de zoom; conserva, los WebP oficiales, ambos temas y las ondas. Licencia MIT.
+Plataforma de código abierto para descargar contenido autorizado de YouTube con **yt-dlp y FFmpeg**. Compacta el diseño aprobado al 100 % de zoom; conserva los WebP oficiales, ambos temas y las ondas. Licencia MIT.
 
 **Pegar enlace → Video o Audio → Descargar.** No exige contraseña ni registro.
 
