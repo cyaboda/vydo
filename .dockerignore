@@ -5,3 +5,5 @@ coverage
 tests
 scripts
 docs
+data/
+supabase/

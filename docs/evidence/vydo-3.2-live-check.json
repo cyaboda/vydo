@@ -1,0 +1,48 @@
+{
+  "date": "2026-11-17T15:16:46.033Z",
+  "url": "https://www.youtube.com/watch?v=LY43o01dkU4",
+  "results": [
+    {
+      "format": "mp4",
+      "quality": "360",
+      "bytes": 12359836,
+      "decode": "passed",
+      "streams": [
+        "Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 640x360 [SAR 1:1 DAR 16:9], 346 kb/s, 30 fps, 30 tbr, 15360 tbn (default)",
+        "Stream #0:1[0x2](eng): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 194 kb/s (default)",
+        "Stream #0:0(und): Video: wrapped_avframe, yuv420p(tv, bt709, progressive), 640x360 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 30 fps, 30 tbn (default)",
+        "Stream #0:1(eng): Audio: pcm_s16le, 48000 Hz, stereo, s16, 1536 kb/s (default)"
+      ]
+    },
+    {
+      "format": "mp3",
+      "quality": null,
+      "bytes": 4866332,
+      "decode": "passed",
+      "streams": [
+        "Stream #0:0: Audio: mp3 (mp3float), 48000 Hz, stereo, fltp, 216 kb/s, start 0.023021",
+        "Stream #0:0: Audio: pcm_s16le, 48000 Hz, stereo, s16, 1536 kb/s"
+      ]
+    }
+  ],
+  "preview": {
+    "id": "a49e0f96489061ed09839c131fdbaa5876395aa36228d632",
+    "title": "Brainstorm - Don't Call Me (Music Video)",
+    "duration": 180,
+    "thumbnail": "https://i.ytimg.com/vi_webp/LY43o01dkU4/maxresdefault.webp",
+    "qualities": [
+      "1080",
+      "720",
+      "480",
+      "360"
+    ],
+    "formats": [
+      "mp4",
+      "mp3",
+      "wav",
+      "m4a",
+      "flac"
+    ]
+  },
+  "status": "passed"
+}

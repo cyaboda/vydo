@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const state = {
   preview: null, url: null, job: sessionStorage.getItem('vydo_job'),
-  timer: null, busy: false, audio: 'mp3'
+  timer: null, busy: false, audio: 'mp3', preferredQuality: null, accountId: null
 };
 const audioFormats = ['mp3', 'm4a', 'wav', 'flac'];
 const selectedMode = () => document.querySelector('[name="mode"]:checked').value;
@@ -13,15 +13,14 @@ async function api(path, method = 'GET', data) {
     body: data ? JSON.stringify(data) : undefined
   });
   const value = await response.json();
-  if (response.status === 401 && path !== '/api/session') showGate();
-  if (!response.ok) throw Error(value.error || `Error ${response.status}`);
+  if (value.quota) window.vydoAccount.setQuota(value.quota);
+  if (!response.ok) { if(response.status===429)window.vydoAccount.refresh().catch(()=>{});throw Error(value.error || `Error ${response.status}`); }
   return value;
 }
 function error(message) { $('alert').textContent = message; $('alert').hidden = false; }
-function showGate() { if (!$('gate').open) $('gate').showModal(); $('password').focus(); }
 function busy(value) {
   state.busy = value;
-  for (const id of ['analyze', 'start', 'url', 'paste', 'options', 'mode-options', 'preferred-audio']) $(id).disabled = value;
+  for (const id of ['analyze', 'start', 'url', 'paste', 'options', 'mode-options', 'preferred-audio', 'main-audio']) $(id).disabled = value;
 }
 function invalidate() {
   state.preview = null;
@@ -31,7 +30,9 @@ function invalidate() {
 }
 function updateMode() {
   const video = selectedMode() === 'mp4';
-  $('audio-label').textContent = `Audio (${state.audio.toUpperCase()})`;
+  $('audio-label').textContent = 'Audio';
+  $('main-audio-row').hidden = video;
+  $('main-audio').value = state.audio;
   $('quality-row').hidden = !video;
   $('quality').disabled = !video;
   $('audio-options').hidden = video;
@@ -47,6 +48,7 @@ function setAudio(value) {
 $('mode-options').addEventListener('change', updateMode);
 $('audio-format').addEventListener('change', e => setAudio(e.target.value));
 $('preferred-audio').addEventListener('change', e => setAudio(e.target.value));
+$('main-audio').addEventListener('change', e => setAudio(e.target.value));
 $('url').addEventListener('input', invalidate);
 $('paste').addEventListener('click', async () => {
   try { $('url').value = await navigator.clipboard.readText(); invalidate(); }
@@ -56,22 +58,6 @@ $('settings-button').addEventListener('click', () => $('settings').showModal());
 for (const button of document.querySelectorAll('[data-close]')) {
   button.addEventListener('click', () => $(button.dataset.close).close());
 }
-$('gate').addEventListener('cancel', e => e.preventDefault());
-$('login').addEventListener('submit', async e => {
-  e.preventDefault(); $('login-button').disabled = true;
-  try {
-    await api('/api/session', 'POST', {password: $('password').value});
-    $('password').value = ''; $('gate').close(); $('login-error').hidden = true; $('logout').hidden = false;
-    if (state.job) poll(); else $('url').focus();
-  } catch (err) { $('login-error').textContent = err.message; $('login-error').hidden = false; }
-  finally { $('login-button').disabled = false; }
-});
-$('logout').addEventListener('click', async () => {
-  try {
-    await api('/api/session', 'DELETE'); clearTimeout(state.timer);
-    sessionStorage.removeItem('vydo_job'); location.reload();
-  } catch (err) { $('settings').close(); error(err.message); }
-});
 $('analyze-form').addEventListener('submit', e => {
   e.preventDefault();
   if (state.busy) return;
@@ -100,7 +86,8 @@ async function analyze() {
     $('quality').replaceChildren(...preview.qualities.map(q => {
       const option = document.createElement('option'); option.value = q; option.textContent = `${q}p`; return option;
     }));
-    for (const select of [$('audio-format'), $('preferred-audio')]) {
+    if (preview.qualities.includes(state.preferredQuality)) $('quality').value=state.preferredQuality;
+    for (const select of [$('audio-format'), $('preferred-audio'), $('main-audio')]) {
       for (const option of select.options) option.disabled = !preview.formats.includes(option.value);
     }
     updateMode();
@@ -168,7 +155,16 @@ $('cancel').addEventListener('click', async () => {
 });
 $('retry').addEventListener('click', poll);
 updateMode();
-(async () => {
-  try { await api('/api/session'); $('logout').hidden = false; if (state.job) poll(); }
-  catch { showGate(); }
-})();
+window.addEventListener('vydo-session',event=>{
+  const value=event.detail;
+  if(value.user&&value.profile&&!state.busy){
+    if(state.accountId!==value.user.id||!state.job){
+      state.preferredQuality=value.profile.quality;
+      if(value.profile.format==='mp4')document.querySelector('[name="mode"][value="mp4"]').checked=true;
+      else {setAudio(value.profile.format);document.querySelector('[name="mode"][value="audio"]').checked=true;}
+      updateMode();
+    }
+    state.accountId=value.user.id;
+  }
+});
+window.vydoAccount.ready.then(()=>{if(state.job)poll();});

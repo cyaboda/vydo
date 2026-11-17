@@ -4,8 +4,8 @@ import os from 'node:os';
 import {token} from './lib.mjs';
 
 export class Jobs {
-  constructor(engine,{concurrency=1,maxQueue=3,ttl=1200000,maxJobs=32}={}) {
-    Object.assign(this,{engine,concurrency,maxQueue,ttl,maxJobs});
+  constructor(engine,{concurrency=1,maxQueue=3,ttl=1200000,maxJobs=32,onFinish=async()=>{}}={}) {
+    Object.assign(this,{engine,concurrency,maxQueue,ttl,maxJobs,onFinish});
     this.items=new Map();this.queue=[];this.running=new Set();this.closed=false;
   }
   async init() { this.root=await mkdtemp(path.join(os.tmpdir(),'vydo-')); return this; }
@@ -15,7 +15,7 @@ export class Jobs {
   create(input,owner) {
     if(this.closed || this.items.size>=this.maxJobs || (this.running.size>=this.concurrency && this.queue.length>=this.maxQueue))
       throw Object.assign(Error('Capacidad completa. Espera antes de volver a intentarlo.'),{status:429});
-    const j={...input,id:token(),owner,status:'queued',createdAt:Date.now(),progress:{phase:'queued',percent:null},controller:new AbortController()};
+    const j={...input,id:input.id||token(),owner,status:'queued',createdAt:Date.now(),progress:{phase:'queued',percent:null},controller:new AbortController()};
     this.items.set(j.id,j);this.queue.push(j);this.drain();return j;
   }
   drain() {
@@ -31,14 +31,18 @@ export class Jobs {
       j.file=await this.engine.process(j,j.dir,p=>{j.progress=p;},j.controller.signal);
       if(j.controller.signal.aborted)throw Error('Trabajo cancelado.');
       for(const name of await readdir(j.dir))if(path.join(j.dir,name)!==j.file)await rm(path.join(j.dir,name),{force:true});
-      j.filename=`vydo-${j.id.slice(0,8)}.${j.format}`;j.status='done';j.progress={phase:'done',percent:100};
+      j.filename=`vydo-${j.id.slice(0,8)}.${j.format}`;
+      await this.onFinish(j,'done',false);j.status='done';j.progress={phase:'done',percent:100};
     } catch(e) {j.error=e.message;
       if(j.dir)await rm(j.dir,{recursive:true,force:true}).catch(()=>{});
-      j.status=j.controller.signal.aborted?'cancelled':'error';
+      const internal=Boolean(j.internalFailure||e.internal||e.code);
+      const status=j.controller.signal.aborted&&!internal?'cancelled':'error';
+      try{await this.onFinish(j,status,internal);}catch{j.error='No se pudo actualizar el estado. El cupo se recuperará automáticamente.';}
+      j.status=status;
     } finally {j.finishedAt=Date.now();}
   }
-  cancel(j) {
-    if(j.status==='queued') {this.queue=this.queue.filter(x=>x!==j);j.status='cancelled';j.finishedAt=Date.now();}
+  async cancel(j) {
+    if(j.status==='queued') {this.queue=this.queue.filter(x=>x!==j);await this.onFinish(j,j.internalFailure?'error':'cancelled',Boolean(j.internalFailure));j.status=j.internalFailure?'error':'cancelled';j.finishedAt=Date.now();}
     if(j.status==='processing')j.controller.abort();
   }
   async cleanup(now=Date.now()) {
@@ -48,7 +52,7 @@ export class Jobs {
     }
   }
   async close() {
-    this.closed=true;for(const j of this.items.values())this.cancel(j);
+    this.closed=true;for(const j of this.items.values()){j.internalFailure=true;await this.cancel(j);}
     await Promise.allSettled([...this.running]);await rm(this.root,{recursive:true,force:true});
   }
 }

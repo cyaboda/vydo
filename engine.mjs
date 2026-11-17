@@ -40,7 +40,7 @@ export function run(binary, args, {signal, timeout=120000, maxOutput=8*1024*1024
     if (signal?.aborted) return reject(Error('Trabajo cancelado.'));
     const child = spawn(binary,args,{windowsHide:true,detached:process.platform !== 'win32',stdio:['ignore','pipe','pipe']});
     let output='', pending='', failure, stderr='';
-    const stop = message => { failure ||= Error(message); killTree(child); };
+    const stop = message => { failure ||= Object.assign(Error(message),{internal:!signal?.aborted}); killTree(child); };
     const abort = () => stop('Trabajo cancelado.');
     signal?.addEventListener('abort',abort,{once:true});
     const timer = setTimeout(()=>stop('Se agotó el tiempo de procesamiento.'),timeout);
@@ -98,17 +98,17 @@ export function createEngine({ytDlp=process.env.YTDLP_BIN||'yt-dlp', ffmpeg=proc
           m4a:['-vn','-c:a','aac','-b:a','192k'],flac:['-vn','-c:a','flac'],
           mp4:['-c:v','libx264','-preset','veryfast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart']};
         onProgress({phase:'converting',percent:null});
-        await execute(ffmpeg,['-nostdin','-hide_banner','-loglevel','error','-y','-i',path.join(dir,files[0]),
+        try { await execute(ffmpeg,['-nostdin','-hide_banner','-loglevel','error','-y','-i',path.join(dir,files[0]),
           ...codecs[job.format],'-t',String(maxDuration),'-progress','pipe:1','-nostats',output],
           {signal:controller.signal,timeout,onLine:line=>{
             if(line.startsWith('out_time_us=')){const time=Number(line.slice(12))/1000000;
               onProgress({phase:'converting',percent:Number.isFinite(time)?Math.min(100,100*time/job.duration):null});}
-          }});
-        if((await stat(output)).size<=0)throw Error('El archivo está vacío.');
+          }}); } catch(e) { if(!signal?.aborted)e.internal=true;throw e; }
+        if((await stat(output)).size<=0)throw Object.assign(Error('El archivo está vacío.'),{internal:true});
         const sizes=await Promise.all((await readdir(dir)).map(async n=>(await stat(path.join(dir,n))).size));
-        if(sizes.reduce((a,b)=>a+b,0)>maxBytes)throw Error('El trabajo superó el espacio permitido.');
+        if(sizes.reduce((a,b)=>a+b,0)>maxBytes)throw Object.assign(Error('El trabajo superó el espacio permitido.'),{internal:true});
         return output;
-      } catch(e) { if(diskError)throw Error('El trabajo superó el espacio permitido.'); throw e; }
+      } catch(e) { if(diskError)throw Object.assign(Error('El trabajo superó el espacio permitido.'),{internal:true}); throw e; }
       finally {clearInterval(monitor);signal?.removeEventListener('abort',abort);}
     }
   };

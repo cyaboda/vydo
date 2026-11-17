@@ -1,112 +1,106 @@
-# vydo 3.1
+# vydo 3.2
 
-Aplicación web de código abierto para descargar videos de YouTube que tengas autorización para descargar y convertir su audio. Una sola aplicación Node.js sirve la interfaz y ejecuta **yt-dlp + FFmpeg**. Licencia MIT; las licencias de esas herramientas y los derechos sobre el contenido son independientes.
+Plataforma de código abierto para descargar contenido autorizado de YouTube con **yt-dlp y FFmpeg**. Conserva el diseño 3.1, los WebP oficiales, ambos temas y las ondas. Licencia MIT.
 
-- MP4 con video H.264 y audio AAC: **360p, 480p, 720p y 1080p**, solo cuando esa altura está disponible. No reescala ni sustituye la resolución solicitada.
-- Audio **MP3, WAV (PCM), M4A (AAC) y FLAC**. Convertir una fuente con pérdida a FLAC/WAV no restaura su calidad original.
-- Miniatura, título, duración, formatos disponibles y progreso real por fase. Descarga del archivo por streaming, sin cargarlo completo en la memoria del navegador.
-- Clave de instancia, sesiones HttpOnly, trabajos aislados por sesión, cola limitada, cancelación y limpieza automática.
+**Pegar enlace → Video o Audio → Descargar.** No exige contraseña ni registro.
 
-La interfaz 3.1 sigue la referencia visual suministrada: tema claro, logos oficiales, selector compacto y modo oscuro. Consulta [el alcance y la validación del rediseño](docs/redesign-3.1.md).
+- MP4: 360p, 480p, 720p y 1080p, solo si están disponibles.
+- Audio: MP3, M4A, WAV y FLAC. El selector aparece al elegir Audio.
+- Visitantes: **5 trabajos aceptados por IP en una ventana móvil de 60 minutos**.
+- Cuentas gratuitas: **15 por usuario en 60 minutos**, una descarga en curso por identidad.
+- Perfil opcional con preferencias e historial privado de metadatos.
+- Publicidad configurable, desactivada sin proveedor real. Sin anuncios inventados, popups ni redirecciones automáticas.
 
-## Arranque con Docker Compose
+## Arranque local o con Docker
 
-Requisitos: Docker Engine con Compose. No hace falta contratar servicios.
+Node 24.11+ o Docker Engine con Compose. No se necesita contratar un servicio.
 
 ```sh
 cp .env.example .env
-# Sustituye VYDO_TOKEN por un secreto aleatorio (mínimo 24 caracteres).
-# Puedes generarlo con: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 docker compose up --build -d
 ```
 
-Abre `http://localhost:3000`. La aplicación se vincula al loopback del host. Entra con la clave configurada. Nunca publiques `.env`.
+Abre `http://localhost:3000`. **No hay clave de acceso.** Compose persiste SQLite y la clave criptográfica en el volumen `vydo-data`. No elimines ese volumen para actualizar: contiene cuotas y sesiones. Las descargas siguen siendo temporales.
 
-Para publicarla en Internet, configura un proxy inverso HTTPS delante del puerto 3000, `PUBLIC_ORIGIN=https://tu-dominio` y `COOKIE_SECURE=true`, y vuelve a crear el contenedor. El origen incluye esquema y dominio, sin ruta ni barra final. No confíes en encabezados `X-Forwarded-*` para determinar el origen. `render.yaml` es una alternativa de configuración, sin contratación ni despliegue automático desde este proyecto.
-
-**GitHub Pages no ejecuta Node, yt-dlp ni FFmpeg.** Esta aplicación necesita un servidor o contenedor con procesos y almacenamiento temporal. Los Workers convencionales tampoco sustituyen el motor de conversión.
-
-## Desarrollo local
-
-Node.js 22+ (validado con 24.22.1), Python 3.10+, FFmpeg con `libx264`, `libmp3lame`, AAC y FLAC. Instala yt-dlp con sus componentes EJS:
+Para desarrollo:
 
 ```sh
+npm ci
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 export PATH="$PWD/.venv/bin:$PATH"
-export VYDO_TOKEN="tu-clave-aleatoria-de-al-menos-24-caracteres"
-npm start
+node --env-file=.env server.mjs
 ```
 
-En PowerShell usa `.venv\Scripts\pip.exe`, añade `.venv\Scripts` al `PATH` y configura `$env:VYDO_TOKEN`. También puedes indicar rutas absolutas en `YTDLP_BIN` y `FFMPEG_BIN`. yt-dlp usa el mismo ejecutable Node que el servidor. El binario FFmpeg debe estar instalado en el servidor, no en el navegador.
+Instala también FFmpeg con H.264, AAC, MP3, PCM y FLAC. En Windows usa `.venv\Scripts`, variables `$env:...` y, si hace falta, rutas absolutas en `YTDLP_BIN` y `FFMPEG_BIN`. Se fijan las dependencias npm/Python en los lockfiles/configuración. Los paquetes Debian se actualizan desde su repositorio; no se promete reproducibilidad binaria exacta.
 
-El Dockerfile fija la versión de Node y `requirements.txt` fija las dependencias Python. Los paquetes del sistema Debian reciben sus actualizaciones del repositorio de la distribución; no se promete una imagen idéntica byte a byte. No hay dependencias npm de producción. Actualiza yt-dlp y EJS juntos y repite la prueba autorizada cuando YouTube cambie.
+## Cuentas opcionales: estado y configuración
 
-## Uso y límites
+La integración Supabase está preparada y probada con el SDK real frente a un servicio de prueba. **No hay un proyecto VYDO configurado, credenciales reales de Auth, SMTP ni Google activados en esta entrega.** Sin configuración, las descargas anónimas funcionan y las opciones de cuenta explican que aún no están disponibles. No se ha alterado ningún proyecto Supabase de otra aplicación.
 
-1. Accede con la clave de la instancia.
-2. Pega un enlace a un video individual y selecciona Video (MP4) o Audio (MP3).
-3. Pulsa Descargar y confirma tu autorización. La vista previa caduca a los 10 minutos.
-4. Para video, elige una resolución disponible y confirma la descarga. Audio comienza tras el análisis; M4A, WAV y FLAC están en Ajustes y opciones de audio.
-5. Espera a que terminen la descarga y la conversión, y guarda el archivo.
+Para activarlas, sigue [la configuración de Supabase](docs/supabase-3.2.md). El frontend no recibe claves de Supabase, access tokens ni refresh tokens. Solo utiliza la API del propio servidor y una cookie opaca HttpOnly.
 
-La descarga puede informar porcentajes separados para video y audio; la conversión informa su propio porcentaje de FFmpeg. Las fases de preparación sin medición se muestran indeterminadas. Puedes cancelar un trabajo; recargar recupera su identificador en la misma sesión/pestaña.
+## Cuotas y seguridad
 
-Valores predeterminados: **1 trabajo activo + 3 en espera**, 1 análisis simultáneo, 30 minutos de duración por video, 512 MiB de espacio por trabajo (origen y salida sumados), 10 minutos por proceso de descarga/conversión y 2 minutos por análisis. El monitor de disco se ejecuta cada segundo, por lo que puede existir un pequeño exceso transitorio; Compose además limita `/tmp` a 1 GiB. Hay un máximo de 32 registros de trabajos y 128 sesiones. No es un servicio multiusuario de gran escala.
+Las cuotas se reservan en transacciones SQLite (`BEGIN IMMEDIATE`) o PostgreSQL (transacción y advisory lock compartido). Se contabiliza la aceptación del trabajo, no cada vez que se descarga su archivo ya preparado. Recargar, cerrar sesión o reiniciar no borra las cuotas.
 
-Los archivos se eliminan 20 minutos después de finalizar, con comprobación cada 30 segundos. Los fallidos/cancelados se limpian al terminar sus procesos. Una descarga abierta impide borrar su archivo hasta cerrar la respuesta. Al apagar se cancelan procesos y se limpia el directorio de la instancia. Al arrancar se limpian directorios `vydo-*` abandonados de más de 24 horas; el contenedor usa almacenamiento temporal sin persistencia. Reiniciar pierde sesiones, cola y archivos.
+Los fallos internos de conversión, arranque de herramienta, límites de recursos y cierre del servidor devuelven el cupo. Los errores del origen y la cancelación del usuario consumen el trabajo aceptado. Los trabajos abandonados por un proceso se recuperan al caducar su concesión de 90 segundos, renovada cada 5 segundos. Si falla el almacenamiento, las nuevas reservas fallan de forma cerrada; un worker que no renueva su concesión cancela su trabajo.
 
-La sesión dura 8 horas. La clave compartida proporciona acceso personal o de un equipo de confianza; no hay cuentas, recuperación de contraseña ni facturación. Para automatizar se admite `Authorization: Bearer <VYDO_TOKEN>`; esos clientes comparten un propietario de trabajos. El navegador usa una cookie HttpOnly y no guarda la clave en localStorage/sessionStorage. Solo guarda el ID del trabajo en sessionStorage.
+Los visitantes comparten cupo cuando comparten IP. Las cuentas tienen cupo individual; una protección adicional admite hasta 60 trabajos/hora y 3 simultáneos por red, además de 4 reservas activas globales. IPv6 usa un guard adicional por /64. Las IP se guardan con HMAC, no en texto claro; esto es seudonimización, no anonimato absoluto. No se confía en `X-Forwarded-For` salvo desde `TRUSTED_PROXY_CIDRS` explícitos y se evalúa la cadena de derecha a izquierda.
 
-No se admiten listas, directos, contenido privado, DRM ni contenido que requiera autenticación o eludir una restricción. No hay cookies importadas, credenciales de YouTube, proxies de evasión ni APIs comerciales. Un bloqueo de YouTube devuelve un error y no se intenta sortearlo.
+Los trabajos se aíslan por cookie firmada de visitante o por usuario verificado, **no por IP**: otro navegador de la misma red no puede leerlos. El historial no incluye archivos multimedia. Eliminar un registro no restaura cuota. Registro/acceso/recuperación y análisis tienen límites adicionales persistentes.
+
+La API no admite DRM, credenciales de YouTube, cookies importadas, listas, directos ni mecanismos de evasión. Solo se aceptan enlaces HTTPS de hosts exactos de YouTube. No se ejecutan comandos mediante shell ni APIs comerciales.
+
+## Despliegue web
+
+Consulta [la guía de despliegue y operación](docs/deployment-3.2.md). Se necesitan procesos de servidor y espacio temporal: **GitHub Pages no ejecuta yt-dlp ni FFmpeg**.
+
+Una instancia puede utilizar SQLite con un volumen persistente. Para cuotas, sesiones y perfiles compartidos en la nube, configura `DATABASE_URL` con PostgreSQL y ejecuta la migración revisada. El código permite varias instancias compartiendo cuotas, pero la cola y los archivos todavía son locales: usa una instancia o enrutamiento persistente por worker. Una cola distribuida y almacenamiento temporal compartido serían el siguiente paso para balanceo libre.
+
+Con HTTPS externo configura `PUBLIC_ORIGIN=https://tu-dominio` y `COOKIE_SECURE=true`. No publiques el puerto interno sin el proxy. No se ha contratado ni desplegado infraestructura. `render.yaml` es una plantilla que puede implicar costes de disco/hosting: revisa el proveedor antes de usarla.
 
 ## Pruebas
 
 ```sh
+npm ci
 npm test
-# Prueba adicional de los cinco formatos con un origen sintético real:
 FFMPEG_BIN=/usr/bin/ffmpeg npm test
-# Navegador, con motor de prueba aislado:
 npm install --no-save playwright@1.62.1
 npx playwright install chromium
 node scripts/ui-check.mjs
 ```
 
-El chequeo de navegador cubre acceso, vista previa, progreso, descarga y pantalla móvil; usa un motor simulado y no demuestra conexión con YouTube. `BROWSER_BIN` permite seleccionar un Chrome/Chromium instalado. `UI_OUTPUT_DIR` cambia la ubicación de las capturas.
+Hay pruebas de cuotas móviles, concurrencia real entre procesos, reinicio de SQLite, devolución de cupo, aislamiento, API, autenticación SDK/PKCE, migración PostgreSQL y RLS, además de conversión real de un origen sintético a los cinco formatos. `TEST_DATABASE_URL` permite ejecutar el adaptador PostgreSQL con una **base desechable de pruebas**; la CI proporciona una. Nunca apuntes ese valor a datos reales: el fixture crea roles y tablas de Auth de prueba.
 
-La prueba de red es **optativa** y requiere contenido autorizado:
+La prueba de navegador usa un motor y cuentas de prueba deterministas. Verifica el acceso público, ambos temas, logos, formatos, cuota, perfil, preferencias, historial, cancelación, teclado y tamaños móviles. No demuestra conexión con Google o entrega real de correos.
+
+La prueba de YouTube es optativa y exige autorización:
 
 ```sh
 VYDO_TEST_AUTHORIZED=yes VYDO_TEST_URL='https://www.youtube.com/watch?v=TU_VIDEO_ID' npm run test:live
-# Todas las variantes, en una sola ejecución:
-VYDO_TEST_AUTHORIZED=yes VYDO_TEST_URL='https://www.youtube.com/watch?v=TU_VIDEO_ID' \
-VYDO_TEST_FORMATS='mp4:360,mp4:480,mp4:720,mp4:1080,mp3,wav,m4a,flac' npm run test:live
 ```
 
-El script comprueba análisis, API de trabajos, descarga HTTP, tamaño y decodificación completa con FFmpeg. Verifica la altura solicitada en MP4. Limpia los archivos al salir. `VYDO_TEST_REPORT` permite guardar el informe JSON. La prueba no debe ejecutarse automáticamente sobre enlaces arbitrarios.
+Usa una base aislada de prueba, mantiene el cupo de 5 por ejecución, recupera el archivo por la API pública con su cookie y lo decodifica completo. `VYDO_TEST_FORMATS` selecciona hasta cinco variantes por ejecución; `VYDO_TEST_REPORT` guarda JSON. No se ejecuta automáticamente sobre contenido arbitrario. Consulta [la evidencia de 3.2](docs/platform-3.2.md).
 
-La CI ejecuta pruebas, conversiones sintéticas, navegador y arranque Docker. Consulta [el diagnóstico y la migración](docs/migration.md) y [la evidencia de validación](docs/validation.md).
+## API principal
 
-## API
-
-| Método y ruta | Resultado |
+| Ruta | Acceso y función |
 | --- | --- |
-| `GET /api/health` | Herramientas instaladas, 503 si falta alguna |
-| `POST /api/session` | `{password}` crea cookie de sesión |
-| `GET /api/session` / `DELETE /api/session` | Comprueba/cierra sesión |
-| `POST /api/preview` | `{url, authorized:true}` devuelve `preview` |
-| `POST /api/jobs` | `{url, previewId, format, quality, authorized:true}` devuelve `job` |
-| `GET /api/jobs/:id` | Estado y progreso de fase |
-| `DELETE /api/jobs/:id` | Cancela trabajo |
-| `GET /api/jobs/:id/download` | Archivo adjunto con autenticación |
+| `GET /api/health` | Público; herramientas y almacenamiento, 503 si falla |
+| `GET /api/session` | Público; identidad, cuota, disponibilidad de cuentas y anuncio configurado |
+| `POST /api/preview` | Público; `{url, authorized:true}` |
+| `POST /api/jobs` | Público con cookie de visitante/cuenta; valida vista previa y reserva cuota |
+| `GET /api/jobs/:id` | Solo propietario; estado, progreso y cuota |
+| `DELETE /api/jobs/:id` | Solo propietario; cancelación |
+| `GET /api/jobs/:id/download` | Solo propietario; streaming del archivo temporal |
+| `POST /api/auth/login`, `/signup`, `/recover`, `/google` | Opcionales; Supabase configurado |
+| `GET /auth/callback` | Intercambio PKCE en el mismo navegador |
+| `DELETE /api/session` | Cierra sesión de cuenta; no obliga a registrarse |
+| `POST /api/auth/password` | Cuenta, sesión reciente; cambia contraseña |
+| `GET/PATCH /api/profile` | Cuenta; historial y preferencias propios |
+| `DELETE /api/profile/history/:id` | Cuenta; elimina un registro propio |
+| `DELETE /api/account` | Cuenta, sesión reciente, confirmación `ELIMINAR` y admin de Auth configurado |
+| `GET /api/admin/health` | Desactivado sin `VYDO_ADMIN_TOKEN`; Bearer independiente de 32+ caracteres |
 
-Los POST requieren JSON. La API solo acepta enlaces HTTPS canónicos de hosts exactos de YouTube y los normaliza antes de pasarlos como argumentos a yt-dlp, sin shell. Hay límites de cuerpo, salida de procesos, consultas de metadatos, intentos de acceso y trabajos. No se ofrecen URLs firmadas del proveedor al navegador.
-
-## Diagnóstico de fallos
-
-- **401:** inicia sesión de nuevo o revisa el token.
-- **403:** revisa `PUBLIC_ORIGIN`; si el error es de YouTube, respeta la restricción.
-- **429:** espera a que se libere capacidad o termine la ventana de un minuto.
-- **503:** faltan yt-dlp/FFmpeg o no se pueden ejecutar.
-- **Formato no disponible:** analiza de nuevo; la disponibilidad puede cambiar entre análisis y descarga.
-- **Error de procesamiento:** revisa versiones de las herramientas, espacio y conectividad. No se garantiza disponibilidad universal ni futura para todos los videos, regiones o servidores.
+POST/PATCH requieren JSON. Los errores 429 incluyen `Retry-After`. Los recursos internos, variables de entorno, dependencias y bases de datos no se sirven como archivos públicos.

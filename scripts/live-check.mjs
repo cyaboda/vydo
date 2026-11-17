@@ -7,11 +7,17 @@ import {parseYoutubeUrl} from '../lib.mjs';
 
 if(process.env.VYDO_TEST_AUTHORIZED!=='yes'||!process.env.VYDO_TEST_URL)throw Error('Set VYDO_TEST_URL and VYDO_TEST_AUTHORIZED=yes only for authorized content.');
 const url=parseYoutubeUrl(process.env.VYDO_TEST_URL);
-const password=randomBytes(32).toString('hex');
-const app=await createApp({password});
+const app=await createApp({key:randomBytes(32),storeOptions:{filename:':memory:'}});
 await new Promise(r=>app.server.listen(0,'127.0.0.1',r));
 const base='http://127.0.0.1:'+app.server.address().port;
-async function api(route,data){const r=await fetch(base+route,{method:data?'POST':'GET',headers:{Authorization:'Bearer '+password,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});const value=await r.json();if(!r.ok)throw Error(JSON.stringify(value));return value;}
+const jar=new Map();
+async function call(route,data){
+ const r=await fetch(base+route,{method:data?'POST':'GET',headers:{Cookie:[...jar].map(([k,v])=>k+'='+v).join(';'),Origin:base,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});
+ for(const value of r.headers.getSetCookie()){const [name,v]=value.split(';')[0].split('=');if(v)jar.set(name,v);}
+ return r;
+}
+async function api(route,data){const r=await call(route,data);const value=await r.json();if(!r.ok)throw Error(JSON.stringify(value));return value;}
+
 const report={date:new Date().toISOString(),url,results:[]};
 try{
  const {preview}=await api('/api/preview',{url,authorized:true});report.preview=preview;console.log('Preview:',preview.title,preview.qualities);
@@ -27,10 +33,10 @@ try{
      await new Promise(r=>setTimeout(r,1000));
    }
    if(job.status!=='done')throw Error(job.error||'Integration timed out');
-   const response=await fetch(base+'/api/jobs/'+job.id+'/download',{headers:{Authorization:'Bearer '+password}});
+   const response=await call('/api/jobs/'+job.id+'/download');
    if(!response.ok)throw Error('File endpoint failed');
    const bytes=(await response.arrayBuffer()).byteLength;
-   const internal=app.jobs.get(job.id,'api');
+   const internal=app.jobs.items.get(job.id);
    const check=spawnSync(process.env.FFMPEG_BIN||'ffmpeg',['-v','info','-i',internal.file,'-f','null','-'],{encoding:'utf8',windowsHide:true,timeout:180000,maxBuffer:2*1024*1024});
    if(check.status!==0)throw Error('FFmpeg could not decode downloaded output');
    const streams=check.stderr.split(/\r?\n/).filter(s=>/Stream.*(Video:|Audio:)/.test(s)).map(s=>s.trim());
