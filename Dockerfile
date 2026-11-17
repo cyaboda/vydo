@@ -11,6 +11,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --chown=node:node lib.mjs engine.mjs jobs.mjs server.mjs store.mjs auth.mjs security.mjs ./
 COPY --chown=node:node migrations/ ./migrations/
+COPY --chown=node:node certs/ ./certs/
 COPY --chown=node:node public/ ./public/
 COPY --chown=node:node scripts/check-auth.mjs scripts/check-production.mjs ./scripts/
 RUN mkdir /data && chown node:node /data
