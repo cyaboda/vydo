@@ -147,7 +147,8 @@ dialog label { font-size: 14px; }
   .primary { min-height: 55px; padding: 13px 17px; gap: 7px; font-size: 14px; }
   .url-field .primary .icon { width: 19px; height: 19px; }
   .mode-options { margin-top: 28px; }
-  .mode-selector { padding: 5px; gap: 1px; max-width: 100%; }
+  .mode-selector { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(360px, 100%); padding: 5px; gap: 1px; max-width: 100%; }
+  .mode-selector label { min-width: 0; }
   .mode-selector label > span { padding: 14px 18px; min-height: 57px; font-size: 14px; gap: 11px; }
   .mode-selector .icon { width: 23px; height: 23px; }
   .result-panel { padding: 19px; margin-top: 24px; }
@@ -165,7 +166,8 @@ dialog label { font-size: 14px; }
   .url-field { flex-wrap: wrap; border-radius: 26px; padding: 10px; }
   .url-field input { width: calc(100% - 50px); }
   .url-field .primary { width: 100%; }
-  .mode-selector label > span { padding: 13px 15px; font-size: 13px; gap: 8px; }
+  .mode-selector label > span { padding: 13px 9px; font-size: 12px; gap: 7px; }
+  .mode-selector .icon { width: 20px; height: 20px; }
 }
 @media (prefers-reduced-motion: no-preference) {
   button, a, .mode-selector label > span { transition: box-shadow .15s ease, filter .15s ease; }

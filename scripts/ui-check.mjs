@@ -58,7 +58,14 @@ try {
   await page.locator('#theme-toggle').click();
   for (const width of [320, 390, 768, 1024, 1753]) {
     await page.setViewportSize({width, height: width < 600 ? 844 : 897});
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `Overflow at ${width}px`);
+    const overflow = await page.evaluate(() => ({
+      exists: document.documentElement.scrollWidth > innerWidth,
+      elements: [...document.querySelectorAll('body *')].filter(el => {
+        const box = el.getBoundingClientRect(); return box.width && (box.right > innerWidth + 1 || box.left < -1);
+      }).map(el => ({tag: el.tagName, class: el.className?.baseVal ?? el.className, width: el.getBoundingClientRect().width}))
+    }));
+    if (overflow.exists) await page.screenshot({path: path.join(output, `overflow-${width}.png`), fullPage: true});
+    assert.equal(overflow.exists, false, `Overflow at ${width}px: ${JSON.stringify(overflow.elements)}`);
     if (width === 390 || width === 768) await page.screenshot({path: path.join(output, `vydo-3.1-${width}-light.png`), fullPage: true});
   }
   // No analysis may run until the user confirms authorization.
