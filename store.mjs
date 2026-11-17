@@ -2,6 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFile, mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {randomBytes} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
 
 const HOUR = 3600000, LEASE = 90000;
 export class LimitError extends Error {
@@ -22,11 +23,25 @@ export async function sqliteAdapter(filename) {
     } finally {release();}
   }, close(){db.close();}};
 }
-export async function postgresAdapter(connectionString) {
+export function postgresConfig(connectionString) {
   const connection=new URL(connectionString);
-  if(!['localhost','127.0.0.1','[::1]'].includes(connection.hostname)&&connection.searchParams.get('sslmode')!=='verify-full')throw Error('PostgreSQL remoto requiere sslmode=verify-full.');
+  const local=['localhost','127.0.0.1','[::1]'].includes(connection.hostname);
+  const mode=connection.searchParams.get('sslmode');
+  if(!local&&mode!=='verify-full')throw Error('PostgreSQL remoto requiere sslmode=verify-full.');
+  if(mode==='verify-full'){
+    // Keep verify-full in the URL: pg's URL parser replaces a separate ssl object.
+    // Collapse duplicate modes so a later URL option cannot downgrade verification.
+    connection.searchParams.set('sslmode','verify-full');
+    if(connection.hostname.endsWith('.pooler.supabase.com')&&!connection.searchParams.has('sslrootcert')){
+      connection.searchParams.set('sslrootcert',fileURLToPath(new URL('./certs/supabase-prod-ca-2021.crt',import.meta.url)));
+    }
+  }
+  return {connectionString:connection.href,max:5,connectionTimeoutMillis:5000,statement_timeout:10000};
+}
+export async function postgresAdapter(connectionString) {
+  const config=postgresConfig(connectionString);
   const {Pool}=await import('pg');
-  const pool=new Pool({connectionString,max:5,connectionTimeoutMillis:5000,statement_timeout:10000});
+  const pool=new Pool(config);
   const tables={vydo_usage:'private.vydo_usage',vydo_sessions:'private.vydo_sessions',vydo_rates:'private.vydo_rates',vydo_profiles:'public.vydo_profiles',vydo_history:'public.vydo_history'};
   function translate(sql){let n=0;return sql.replace(/\bvydo_(usage|sessions|rates|profiles|history)\b/g,t=>tables[t]).replace(/\?/g,()=>'$'+(++n));}
   return {kind:'postgres', async tx(fn, lock=false) {
