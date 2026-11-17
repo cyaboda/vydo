@@ -27,6 +27,10 @@ async function terminal(call,id){for(let n=0;n<100;n++){const r=await call('/api
 test('protected API, public assets, health and CSRF',async t=>{
  const {call}=await setup(t);
  assert.equal((await call('/')).status,200);
+ for(const asset of ['/LOGO_BLACK.webp','/LOGO_WHITE.webp']){
+   const response=await call(asset,{auth:false});assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/webp');
+ }
+ assert.equal((await call('/theme.js',{auth:false})).status,200);
  assert.equal((await call('/api/health',{auth:false})).status,200);
  assert.equal((await call('/api/session',{auth:false})).status,401);
  assert.equal((await call('/api/preview',{method:'POST',data:{url,authorized:true},headers:{Origin:'https://evil.test'}})).status,403);

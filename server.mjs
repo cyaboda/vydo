@@ -42,9 +42,10 @@ export async function createApp({password=process.env.VYDO_TOKEN,engine=createEn
     try {
       const url=new URL(req.url,'http://localhost'),route=url.pathname;
       if(req.method==='GET'&&!route.startsWith('/api/')){
-        const assets={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/app.js':'app.js','/favicon.svg':'favicon.svg'};
+        const assets={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/app.js':'app.js','/favicon.svg':'favicon.svg',
+          '/theme.js':'theme.js','/LOGO_BLACK.webp':'LOGO_BLACK.webp','/LOGO_WHITE.webp':'LOGO_WHITE.webp'};
         if(!assets[route])return json(res,404,{error:'No encontrado.'});
-        const types={html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',svg:'image/svg+xml'};
+        const types={html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',svg:'image/svg+xml',webp:'image/webp'};
         res.setHeader('Content-Type',types[assets[route].split('.').pop()]);
         return res.end(await readFile(new URL(`./public/${assets[route]}`,import.meta.url)));
       }

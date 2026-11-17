@@ -1,4 +1,4 @@
-# vydo 3.0
+# vydo 3.1
 
 Aplicación web de código abierto para descargar videos de YouTube que tengas autorización para descargar y convertir su audio. Una sola aplicación Node.js sirve la interfaz y ejecuta **yt-dlp + FFmpeg**. Licencia MIT; las licencias de esas herramientas y los derechos sobre el contenido son independientes.
 
@@ -6,6 +6,8 @@ Aplicación web de código abierto para descargar videos de YouTube que tengas a
 - Audio **MP3, WAV (PCM), M4A (AAC) y FLAC**. Convertir una fuente con pérdida a FLAC/WAV no restaura su calidad original.
 - Miniatura, título, duración, formatos disponibles y progreso real por fase. Descarga del archivo por streaming, sin cargarlo completo en la memoria del navegador.
 - Clave de instancia, sesiones HttpOnly, trabajos aislados por sesión, cola limitada, cancelación y limpieza automática.
+
+La interfaz 3.1 sigue la referencia visual suministrada: tema claro, logos oficiales, selector compacto y modo oscuro. Consulta [el alcance y la validación del rediseño](docs/redesign-3.1.md).
 
 ## Arranque con Docker Compose
 
@@ -43,9 +45,9 @@ El Dockerfile fija la versión de Node y `requirements.txt` fija las dependencia
 ## Uso y límites
 
 1. Accede con la clave de la instancia.
-2. Pega un enlace a un video individual y confirma tu autorización.
-3. Analiza el enlace. La vista previa caduca a los 10 minutos.
-4. Elige uno de los formatos y una resolución disponible para MP4.
+2. Pega un enlace a un video individual y selecciona Video (MP4) o Audio (MP3).
+3. Pulsa Descargar y confirma tu autorización. La vista previa caduca a los 10 minutos.
+4. Para video, elige una resolución disponible y confirma la descarga. Audio comienza tras el análisis; M4A, WAV y FLAC están en Ajustes y opciones de audio.
 5. Espera a que terminen la descarga y la conversión, y guarda el archivo.
 
 La descarga puede informar porcentajes separados para video y audio; la conversión informa su propio porcentaje de FFmpeg. Las fases de preparación sin medición se muestran indeterminadas. Puedes cancelar un trabajo; recargar recupera su identificador en la misma sesión/pestaña.
