@@ -1,9 +1,12 @@
 services:
   - type: web
-    name: media-studio-personal
+    name: vydo
     runtime: docker
-    plan: starter
     healthCheckPath: /api/health
     envVars:
-      - key: MEDIA_STUDIO_TOKEN
+      - key: VYDO_TOKEN
         sync: false
+      - key: PUBLIC_ORIGIN
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"

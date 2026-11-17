@@ -1,6 +1,0 @@
-name = "media-studio-api"
-main = "index.js"
-compatibility_date = "2026-11-01"
-# Configure secrets with `npx wrangler secret put RAPIDAPI_KEY` and ACCESS_TOKEN.
-# Add ALLOWED_ORIGIN as a normal variable in the Cloudflare dashboard,
-# e.g. https://YOURNAME.github.io (no trailing slash).

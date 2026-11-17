@@ -1,0 +1,92 @@
+{
+  "date": "2026-11-16T22:02:11.784Z",
+  "url": "https://www.youtube.com/watch?v=LY43o01dkU4",
+  "results": [
+    {
+      "format": "mp4",
+      "quality": "480",
+      "bytes": 16712784,
+      "decode": "passed",
+      "streams": [
+        "Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 854x480 [SAR 1:1 DAR 427:240], 540 kb/s, 30 fps, 30 tbr, 15360 tbn (default)",
+        "Stream #0:1[0x2](eng): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 194 kb/s (default)",
+        "Stream #0:0(und): Video: wrapped_avframe, yuv420p(tv, bt709, progressive), 854x480 [SAR 1:1 DAR 427:240], q=2-31, 200 kb/s, 30 fps, 30 tbn (default)",
+        "Stream #0:1(eng): Audio: pcm_s16le, 48000 Hz, stereo, s16, 1536 kb/s (default)"
+      ]
+    },
+    {
+      "format": "mp4",
+      "quality": "720",
+      "bytes": 27423001,
+      "decode": "passed",
+      "streams": [
+        "Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 1280x720 [SAR 1:1 DAR 16:9], 1016 kb/s, 30 fps, 30 tbr, 15360 tbn (default)",
+        "Stream #0:1[0x2](eng): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 194 kb/s (default)",
+        "Stream #0:0(und): Video: wrapped_avframe, yuv420p(tv, bt709, progressive), 1280x720 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 30 fps, 30 tbn (default)",
+        "Stream #0:1(eng): Audio: pcm_s16le, 48000 Hz, stereo, s16, 1536 kb/s (default)"
+      ]
+    },
+    {
+      "format": "mp4",
+      "quality": "1080",
+      "bytes": 48667194,
+      "decode": "passed",
+      "streams": [
+        "Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 1962 kb/s, 30 fps, 30 tbr, 15360 tbn (default)",
+        "Stream #0:1[0x2](eng): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 194 kb/s (default)",
+        "Stream #0:0(und): Video: wrapped_avframe, yuv420p(tv, bt709, progressive), 1920x1080 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 30 fps, 30 tbn (default)",
+        "Stream #0:1(eng): Audio: pcm_s16le, 48000 Hz, stereo, s16, 1536 kb/s (default)"
+      ]
+    },
+    {
+      "format": "wav",
+      "quality": null,
+      "bytes": 34524622,
+      "decode": "passed",
+      "streams": [
+        "Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s",
+        "Stream #0:0: Audio: pcm_s16le, 48000 Hz, stereo, s16, 1536 kb/s"
+      ]
+    },
+    {
+      "format": "m4a",
+      "quality": null,
+      "bytes": 4402503,
+      "decode": "passed",
+      "streams": [
+        "Stream #0:0[0x1](eng): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 194 kb/s (default)",
+        "Stream #0:0(eng): Audio: pcm_s16le, 48000 Hz, stereo, s16, 1536 kb/s (default)"
+      ]
+    },
+    {
+      "format": "flac",
+      "quality": null,
+      "bytes": 30276157,
+      "decode": "passed",
+      "streams": [
+        "Stream #0:0: Audio: flac, 48000 Hz, stereo, s32 (24 bit)",
+        "Stream #0:0: Audio: pcm_s16le, 48000 Hz, stereo, s16, 1536 kb/s"
+      ]
+    }
+  ],
+  "preview": {
+    "id": "cd9dbe4e8e73b95895101c2db173147303a4ba35fd7f5e55",
+    "title": "Brainstorm - Don't Call Me (Music Video)",
+    "duration": 180,
+    "thumbnail": "https://i.ytimg.com/vi_webp/LY43o01dkU4/maxresdefault.webp",
+    "qualities": [
+      "1080",
+      "720",
+      "480",
+      "360"
+    ],
+    "formats": [
+      "mp4",
+      "mp3",
+      "wav",
+      "m4a",
+      "flac"
+    ]
+  },
+  "status": "passed"
+}

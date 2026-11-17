@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 export const FORMATS = new Set(['mp4','mp3','wav','flac','m4a']);
-export const QUALITIES = new Set(['best','1080','720','480','360']);
+export const QUALITIES = new Set(['1080','720','480','360']);
 export function parseYoutubeUrl(raw) {
   if(typeof raw !== 'string' || raw.length > 2048) throw new Error('Enlace no válido.');
   let url;
@@ -21,6 +21,7 @@ export function parseYoutubeUrl(raw) {
 }
 export function validateRequest(data) {
   if (!data || typeof data !== 'object') throw new Error('Solicitud inválida.');
+  if (data.authorized !== true) throw new Error('Confirma que tienes autorización para descargar.');
   const url = parseYoutubeUrl(data.url);
   if (!FORMATS.has(data.format)) throw new Error('Formato no compatible.');
   if (!QUALITIES.has(data.quality)) throw new Error('Calidad no compatible.');

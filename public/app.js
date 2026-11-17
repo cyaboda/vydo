@@ -1,36 +1,70 @@
 const $=id=>document.getElementById(id);
-const state={format:'mp4',id:null,timer:null,secret:sessionStorage.getItem('media_studio_key')||''};
-function headers(json=false){return {'Authorization':`Bearer ${state.secret}`,...(json?{'Content-Type':'application/json'}:{})};}
-function error(message){$('alert').textContent=message;$('alert').hidden=false;}
-function clear(){ $('alert').hidden=true;$('progress').hidden=true;$('finished').hidden=true;}
-function loginGate(open){$('gate').hidden=!open;}
-loginGate(!state.secret);
-$('login').addEventListener('submit',async e=>{
- e.preventDefault();const candidate=$('secret').value.trim();if(!candidate)return;
- // Health is public; the authenticated status is checked using a non-mutating job lookup.
- try{const r=await fetch('/api/jobs/'+('0'.repeat(48)),{headers:{Authorization:`Bearer ${candidate}`}});if(r.status===401)throw Error();state.secret=candidate;sessionStorage.setItem('media_studio_key',candidate);$('gate-error').hidden=true;loginGate(false);}catch{$('gate-error').hidden=false;}
-});
-$('formats').addEventListener('click',e=>{const b=e.target.closest('button[data-format]');if(!b)return;state.format=b.dataset.format;document.querySelectorAll('[data-format]').forEach(x=>x.classList.toggle('selected',x===b));$('quality').disabled=state.format!=='mp4';$('quality-hint').textContent=state.format==='mp4'?'La resolución disponible depende del video.':'La mejor calidad de audio disponible será convertida.';});
-$('paste-btn').addEventListener('click',async()=>{try{$('video-url').value=await navigator.clipboard.readText();$('video-url').focus();}catch{error('Tu navegador no permitió pegar automáticamente. Usa Ctrl+V o Cmd+V.');}});
-function processing(value){$('submit').disabled=value;$('submit-label').textContent=value?'PROCESANDO...':'PREPARAR DESCARGA';}
-async function check(id){
- try{const r=await fetch('/api/jobs/'+id,{headers:headers()});if(r.status===401){loginGate(true);throw Error('Tu sesión caducó. Ingresa nuevamente.');}const data=await r.json();if(!r.ok)throw Error(data.error||'No se pudo consultar el estado.');const job=data.job;
- if(job.status==='queued'||job.status==='processing'){$('progress-text').textContent=job.status==='queued'?'En cola...':'Descargando y convirtiendo...';state.timer=setTimeout(()=>check(id),1800);return;}
- processing(false);$('progress').hidden=true;
- if(job.status==='done'){$('finished-name').textContent=job.filename;$('finished').hidden=false;}else error(job.error||'La descarga no pudo completarse.');
- }catch(e){processing(false);$('progress').hidden=true;error(e.message);}
+const state={preview:null,url:null,job:sessionStorage.getItem('vydo_job'),timer:null,busy:false};
+async function api(path,method='GET',data){
+  const r=await fetch(path,{method,headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined});
+  const value=await r.json();
+  if(r.status===401&&!path.endsWith('/session'))showGate();
+  if(!r.ok)throw Error(value.error||`Error ${r.status}`);
+  return value;
 }
-$('submit').addEventListener('click',async()=>{
- clear();if(state.timer)clearTimeout(state.timer);
- const url=$('video-url').value.trim();if(!url){error('Pega un enlace de YouTube.');return;}
- processing(true);
- try{
- const r=await fetch('/api/jobs',{method:'POST',headers:headers(true),body:JSON.stringify({url,format:state.format,quality:$('quality').value})});const data=await r.json();if(r.status===401){sessionStorage.removeItem('media_studio_key');loginGate(true);throw Error('La sesión no es válida.');}if(!r.ok)throw Error(data.error||'No se pudo iniciar la descarga.');
- state.id=data.job.id;$('progress').hidden=false;check(state.id);
- }catch(e){processing(false);error(e.message);}
+function error(message){$('alert').textContent=message;$('alert').hidden=false;}
+function showGate(){if(!$('gate').open)$('gate').showModal();$('password').focus();}
+$('gate').addEventListener('cancel',e=>e.preventDefault());
+$('login').addEventListener('submit',async e=>{
+  e.preventDefault();$('login-button').disabled=true;
+  try{await api('/api/session','POST',{password:$('password').value});$('password').value='';$('gate').close();$('login-error').hidden=true;$('logout').hidden=false;if(state.job)poll();}
+  catch(err){$('login-error').textContent=err.message;$('login-error').hidden=false;}
+  finally{$('login-button').disabled=false;}
 });
-$('download').addEventListener('click',async()=>{
- if(!state.id)return;
- const btn=$('download');btn.disabled=true;btn.textContent='PREPARANDO...';
- try{const r=await fetch(`/api/jobs/${state.id}/download`,{headers:headers()});if(!r.ok){const x=await r.json();throw Error(x.error||'No se pudo descargar.');}const blob=await r.blob();const objectUrl=URL.createObjectURL(blob);const a=document.createElement('a');a.href=objectUrl;a.download=$('finished-name').textContent||`media-studio.${state.format}`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(objectUrl),60000);}catch(e){error(e.message);}finally{btn.disabled=false;btn.textContent='DESCARGAR ↓';}
+$('logout').addEventListener('click',async()=>{
+  try{await api('/api/session','DELETE');clearTimeout(state.timer);state.job=null;sessionStorage.removeItem('vydo_job');location.reload();}catch(e){error(e.message);}
 });
+$('paste').addEventListener('click',async()=>{try{$('url').value=await navigator.clipboard.readText();invalidate();}catch{$('url').focus();}});
+function invalidate(){state.preview=null;$('preview').hidden=true;}
+$('url').addEventListener('input',invalidate);
+function busy(value){state.busy=value;$('start').disabled=value;$('analyze').disabled=value;$('url').disabled=value;$('paste').disabled=value;$('options').disabled=value;}
+$('analyze-form').addEventListener('submit',async e=>{
+  e.preventDefault();if(state.busy)return;
+  $('alert').hidden=true;invalidate();$('finished').hidden=true;$('analyze').textContent='Analizando…';busy(true);
+  try{
+    state.url=$('url').value.trim();const {preview:p}=await api('/api/preview','POST',{url:state.url,authorized:$('permission').checked});state.preview=p;
+    $('title').textContent=p.title;$('duration').textContent=`${Math.floor(p.duration/60)}:${String(Math.floor(p.duration%60)).padStart(2,'0')} · formatos disponibles`;
+    $('thumbnail').hidden=!p.thumbnail;if(p.thumbnail)$('thumbnail').src=p.thumbnail;
+    $('thumbnail').onerror=()=>{$('thumbnail').hidden=true;};
+    for(const input of document.querySelectorAll('[name=format]'))input.disabled=!p.formats.includes(input.value);
+    const first=[...document.querySelectorAll('[name=format]')].find(input=>p.formats.includes(input.value));if(!first)throw Error('No se encontraron formatos descargables.');first.checked=true;
+    $('quality').replaceChildren(...p.qualities.map(q=>{const o=document.createElement('option');o.value=q;o.textContent=q+'p';return o;}));
+    updateFormat();$('preview').hidden=false;
+  }catch(err){error(err.message);}finally{busy(false);$('analyze').innerHTML='Analizar enlace <span aria-hidden="true">→</span>';}
+});
+function updateFormat(){const format=document.querySelector('[name=format]:checked')?.value;$('quality').disabled=format!=='mp4';}
+$('formats').addEventListener('change',updateFormat);
+$('download-form').addEventListener('submit',async e=>{
+  e.preventDefault();if(state.busy||!state.preview)return;
+  if(!$('permission').checked){error('Confirma tu autorización para descargar.');return;}
+  $('alert').hidden=true;$('finished').hidden=true;busy(true);
+  try{
+    const {job}=await api('/api/jobs','POST',{url:state.url,previewId:state.preview.id,authorized:true,format:document.querySelector('[name=format]:checked').value,quality:$('quality').value||'720'});
+    state.job=job.id;sessionStorage.setItem('vydo_job',job.id);poll();
+  }catch(err){busy(false);error(err.message);}
+});
+function finish(){busy(false);state.job=null;sessionStorage.removeItem('vydo_job');$('cancel').hidden=true;}
+async function poll(){
+  if(!state.job)return;busy(true);$('progress-panel').hidden=false;$('cancel').hidden=false;
+  try{
+    const {job}=await api('/api/jobs/'+state.job);const p=job.progress;
+    const labels={queued:'En cola',preparing:'Preparando el origen',downloading:'Descargando el origen',converting:'Convirtiendo tu archivo',done:'Archivo preparado'};
+    $('phase').textContent=labels[p.phase]||'Procesando';$('percent').textContent=p.percent==null?'':`${Math.floor(p.percent)}%`;
+    if(p.percent==null)$('progress').removeAttribute('value');else $('progress').value=p.percent;
+    $('detail').textContent=p.phase==='downloading'?`${((p.bytes||0)/1048576).toFixed(1)} MB recibidos${p.speed?' · '+(p.speed/1048576).toFixed(1)+' MB/s':''}${p.eta!=null?' · '+Math.ceil(p.eta)+' s restantes':''}. El progreso puede reiniciarse entre las pistas de video y audio.`:p.phase==='converting'?'Progreso de conversión medido por FFmpeg.':p.phase==='queued'?'Tu trabajo comenzará cuando haya capacidad disponible.':'';
+    if(job.status==='done'){
+      $('download').href=`/api/jobs/${job.id}/download`;$('download').download=job.filename;
+      $('expiry').textContent=`Disponible hasta las ${new Date(job.expiresAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}.`;
+      $('finished').hidden=false;$('progress-panel').hidden=true;finish();return;
+    }
+    if(['error','cancelled'].includes(job.status)){finish();$('progress-panel').hidden=true;throw Error(job.error||'Trabajo cancelado.');}
+    state.timer=setTimeout(poll,1000);
+  }catch(err){error(err.message);busy(false);$('cancel').hidden=true;/* Keep the ID so reload can recover a running job after a network failure. */}
+}
+$('cancel').addEventListener('click',async()=>{try{await api('/api/jobs/'+state.job,'DELETE');}catch(e){error(e.message);}});
+(async()=>{try{await api('/api/session');$('logout').hidden=false;if(state.job)poll();}catch{showGate();}})();

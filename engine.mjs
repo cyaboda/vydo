@@ -1,0 +1,115 @@
+import {spawn, spawnSync} from 'node:child_process';
+import {readdir, stat} from 'node:fs/promises';
+import path from 'node:path';
+import {QUALITIES} from './lib.mjs';
+
+export function preview(info, maxDuration) {
+  if (info.is_live || info.is_upcoming || !Number.isFinite(info.duration) || info.duration <= 0 || info.duration > maxDuration)
+    throw Error('Solo se admiten videos finalizados de duración permitida.');
+  if (info.has_drm || !['public', 'unlisted', undefined, null].includes(info.availability))
+    throw Error('No se admite contenido protegido o con acceso restringido.');
+  const formats = (info.formats || []).filter(f => !f.has_drm);
+  const qualities = [...QUALITIES].filter(q => formats.some(f => f.height === Number(q) && f.vcodec && f.vcodec !== 'none'));
+  const audio = formats.some(f => f.acodec && f.acodec !== 'none');
+  let thumbnail = null;
+  try { const u = new URL(info.thumbnail); if (u.protocol === 'https:' && ['i.ytimg.com','i9.ytimg.com'].includes(u.hostname)) thumbnail = u.href; } catch {}
+  return {id:info.id, title:String(info.title || 'Video').slice(0,300), duration:info.duration,
+    thumbnail, qualities, formats:[...(qualities.length ? ['mp4'] : []), ...(audio ? ['mp3','wav','m4a','flac'] : [])]};
+}
+
+// Each percentage describes the current tool/stage, never a fabricated overall percentage.
+export function downloadProgress(line) {
+  if (!line.startsWith('vydo:')) return null;
+  try { const p = JSON.parse(line.slice(5)); const total = p.total_bytes || p.total_bytes_estimate;
+    return {phase:'downloading', percent:total > 0 ? Math.min(100, p.downloaded_bytes / total * 100) : null,
+      bytes:p.downloaded_bytes || 0, totalBytes:total || null, speed:p.speed || null, eta:p.eta ?? null};
+  } catch { return null; }
+}
+
+function killTree(child) {
+  if (!child.pid) return;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill',['/pid',String(child.pid),'/T','/F'],{windowsHide:true,stdio:'ignore',timeout:2000});
+    child.kill('SIGKILL');
+  }
+  else { try { process.kill(-child.pid,'SIGKILL'); } catch { child.kill('SIGKILL'); } }
+}
+
+export function run(binary, args, {signal, timeout=120000, maxOutput=8*1024*1024, onLine=()=>{}}={}) {
+  return new Promise((resolve,reject) => {
+    if (signal?.aborted) return reject(Error('Trabajo cancelado.'));
+    const child = spawn(binary,args,{windowsHide:true,detached:process.platform !== 'win32',stdio:['ignore','pipe','pipe']});
+    let output='', pending='', failure, stderr='';
+    const stop = message => { failure ||= Error(message); killTree(child); };
+    const abort = () => stop('Trabajo cancelado.');
+    signal?.addEventListener('abort',abort,{once:true});
+    const timer = setTimeout(()=>stop('Se agotó el tiempo de procesamiento.'),timeout);
+    child.stdout.on('data', chunk => {
+      output += chunk.toString(); pending += chunk.toString();
+      if (Buffer.byteLength(output) > maxOutput) { stop('La herramienta excedió el límite de salida.'); output=''; pending=''; return; }
+      const lines = pending.split(/\r?\n/); pending=lines.pop(); lines.forEach(onLine);
+    });
+    child.stderr.on('data',d => { stderr=(stderr+d.toString()).slice(-4000); });
+    child.on('error',e => { failure=e; });
+    child.on('close',code => {
+      clearTimeout(timer); signal?.removeEventListener('abort',abort);
+      if (failure) return reject(failure);
+      if (code !== 0) return reject(Error(/Sign in|bot|403|429|private|DRM|members|age.restricted/i.test(stderr)
+        ? 'YouTube restringió el acceso. No se intentará eludir la restricción.' : 'No se pudo procesar el video con las herramientas locales.'));
+      if(pending)onLine(pending); resolve(output);
+    });
+  });
+}
+
+export function createEngine({ytDlp=process.env.YTDLP_BIN||'yt-dlp', ffmpeg=process.env.FFMPEG_BIN||'ffmpeg', maxDuration=1800, maxBytes=512*1024*1024, timeout=600000, execute=run}={}) {
+  const common = ['--ignore-config','--no-plugin-dirs','--no-cache-dir','--js-runtimes',`node:${process.execPath}`,
+    '--no-playlist','--socket-timeout','20','--retries','1','--fragment-retries','1','--ffmpeg-location',ffmpeg];
+  return {
+    health() { const check=(bin,args)=>spawnSync(bin,args,{timeout:10000,windowsHide:true,stdio:'ignore'}).status===0;
+      return {ytDlp:check(ytDlp,['--version']),ffmpeg:check(ffmpeg,['-version'])}; },
+    async inspect(url, signal) {
+      const raw=await execute(ytDlp,[...common,'--skip-download','--dump-single-json','--',url],{signal});
+      return preview(JSON.parse(raw),maxDuration);
+    },
+    async process(job, dir, onProgress, signal) {
+      const source=path.join(dir,'source.%(ext)s');
+      const selection=job.format==='mp4' ? `bv[height=${job.quality}]+ba/b[height=${job.quality}]` : 'ba/b';
+      // Disk limit includes fragments and converted output, not only the reported remote filesize.
+      const controller=new AbortController();
+      const abort=()=>controller.abort(); signal?.addEventListener('abort',abort,{once:true});
+      if(signal?.aborted)controller.abort();
+      let diskError=false, checking=false;
+      const monitor=setInterval(async()=>{
+        if(checking)return; checking=true;
+        try { const sizes=await Promise.all((await readdir(dir)).map(async n=>(await stat(path.join(dir,n))).size));
+          if(sizes.reduce((a,b)=>a+b,0)>maxBytes){diskError=true;controller.abort();}
+        } catch {} finally {checking=false;}
+      },1000);
+      try {
+        onProgress({phase:'preparing',percent:null});
+        await execute(ytDlp,[...common,'--newline','--progress','--progress-delta','1','--progress-template','download:vydo:%(progress)j',
+          '--max-filesize',String(maxBytes),'--match-filter',`!is_live & duration <= ${maxDuration}`,
+          '-f',selection,'--merge-output-format','mkv','-o',source,'--',job.url],
+          {signal:controller.signal,timeout,onLine:line=>{const p=downloadProgress(line);if(p)onProgress(p);}});
+        const files=(await readdir(dir)).filter(n=>/^source\.(mp4|mkv|webm|m4a|mp3|ogg|opus|flv|wav)$/.test(n));
+        if(files.length!==1)throw Error('No se generó un archivo de origen válido.');
+        const output=path.join(dir,`vydo.${job.format}`);
+        const codecs={mp3:['-vn','-c:a','libmp3lame','-q:a','0'],wav:['-vn','-c:a','pcm_s16le'],
+          m4a:['-vn','-c:a','aac','-b:a','192k'],flac:['-vn','-c:a','flac'],
+          mp4:['-c:v','libx264','-preset','veryfast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart']};
+        onProgress({phase:'converting',percent:null});
+        await execute(ffmpeg,['-nostdin','-hide_banner','-loglevel','error','-y','-i',path.join(dir,files[0]),
+          ...codecs[job.format],'-t',String(maxDuration),'-progress','pipe:1','-nostats',output],
+          {signal:controller.signal,timeout,onLine:line=>{
+            if(line.startsWith('out_time_us=')){const time=Number(line.slice(12))/1000000;
+              onProgress({phase:'converting',percent:Number.isFinite(time)?Math.min(100,100*time/job.duration):null});}
+          }});
+        if((await stat(output)).size<=0)throw Error('El archivo está vacío.');
+        const sizes=await Promise.all((await readdir(dir)).map(async n=>(await stat(path.join(dir,n))).size));
+        if(sizes.reduce((a,b)=>a+b,0)>maxBytes)throw Error('El trabajo superó el espacio permitido.');
+        return output;
+      } catch(e) { if(diskError)throw Error('El trabajo superó el espacio permitido.'); throw e; }
+      finally {clearInterval(monitor);signal?.removeEventListener('abort',abort);}
+    }
+  };
+}
