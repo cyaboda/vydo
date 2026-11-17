@@ -59,6 +59,7 @@ test('preview validation, exact quality, consent, streaming and TTL preserved',a
  assert.equal((await call('/api/jobs/'+job.id+'/download')).status,409);
  assert.equal((await terminal(call,job.id)).status,'done');
  const file=await call('/api/jobs/'+job.id+'/download');assert.equal(await file.text(),'test-media');assert.match(file.headers.get('content-disposition'),/attachment/);
+ const receipt=(await (await call('/api/jobs/'+job.id)).json()).job;assert.equal(receipt.transferCount,1);assert(receipt.downloadedAt);
  const internal=app.jobs.items.get(job.id);for(let n=0;n<100&&internal.readers;n++)await new Promise(r=>setTimeout(r,5));
  const dir=internal.dir;await app.jobs.cleanup(Date.now()+1200010);assert.equal((await call('/api/jobs/'+job.id)).status,404);await assert.rejects(access(dir));
 });

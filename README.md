@@ -1,6 +1,6 @@
-# vydo 3.2
+# vydo 3.3
 
-Plataforma de código abierto para descargar contenido autorizado de YouTube con **yt-dlp y FFmpeg**. Conserva el diseño 3.1, los WebP oficiales, ambos temas y las ondas. Licencia MIT.
+Plataforma de código abierto para descargar contenido autorizado de YouTube con **yt-dlp y FFmpeg**. Compacta el diseño aprobado al 100 % de zoom; conserva, los WebP oficiales, ambos temas y las ondas. Licencia MIT.
 
 **Pegar enlace → Video o Audio → Descargar.** No exige contraseña ni registro.
 
@@ -36,9 +36,9 @@ Instala también FFmpeg con H.264, AAC, MP3, PCM y FLAC. En Windows usa `.venv\S
 
 ## Cuentas opcionales: estado y configuración
 
-La integración Supabase está preparada y probada con el SDK real frente a un servicio de prueba. **No hay un proyecto VYDO configurado, credenciales reales de Auth, SMTP ni Google activados en esta entrega.** Sin configuración, las descargas anónimas funcionan y las opciones de cuenta explican que aún no están disponibles. No se ha alterado ningún proyecto Supabase de otra aplicación.
+Se creó y configuró un proyecto Supabase dedicado, gratuito, en BRAINSTORMVAULT. Se probaron registro, verificación por correo, inicio/cierre de sesión y recuperación reales con una cuenta autorizada. **El alta pública permanece deshabilitada hasta configurar SMTP para destinatarios públicos**; Google y eliminación administrativa de cuenta también requieren configuración. Las descargas sin registro siguen disponibles.
 
-Para activarlas, sigue [la configuración de Supabase](docs/supabase-3.2.md). El frontend no recibe claves de Supabase, access tokens ni refresh tokens. Solo utiliza la API del propio servidor y una cookie opaca HttpOnly.
+Consulta [el estado y la configuración exactos de Supabase 3.3](docs/supabase-3.3.md) y [los cambios y validaciones de 3.3](docs/platform-3.3.md). El navegador solo recibe una cookie opaca HttpOnly, nunca claves ni tokens de Supabase.
 
 ## Cuotas y seguridad
 
@@ -69,11 +69,13 @@ FFMPEG_BIN=/usr/bin/ffmpeg npm test
 npm install --no-save playwright@1.62.1
 npx playwright install chromium
 node scripts/ui-check.mjs
+node scripts/ads-check.mjs
+node --env-file=.env scripts/check-auth.mjs
 ```
 
 Hay pruebas de cuotas móviles, concurrencia real entre procesos, reinicio de SQLite, devolución de cupo, aislamiento, API, autenticación SDK/PKCE, migración PostgreSQL y RLS, además de conversión real de un origen sintético a los cinco formatos. `TEST_DATABASE_URL` permite ejecutar el adaptador PostgreSQL con una **base desechable de pruebas**; la CI proporciona una. Nunca apuntes ese valor a datos reales: el fixture crea roles y tablas de Auth de prueba.
 
-La prueba de navegador usa un motor y cuentas de prueba deterministas. Verifica el acceso público, ambos temas, logos, formatos, cuota, perfil, preferencias, historial, cancelación, teclado y tamaños móviles. No demuestra conexión con Google o entrega real de correos.
+La prueba de navegador usa un motor y cuentas de prueba deterministas. Verifica el acceso público, ambos temas, logos, formatos, cuota, perfil, preferencias, historial, cancelación, teclado y tamaños móviles. No demuestra conexión con Google ni entrega de correos; la prueba real de correo se documenta por separado en 3.3.
 
 La prueba de YouTube es optativa y exige autorización:
 
@@ -95,7 +97,7 @@ Usa una base aislada de prueba, mantiene el cupo de 5 por ejecución, recupera e
 | `DELETE /api/jobs/:id` | Solo propietario; cancelación |
 | `GET /api/jobs/:id/download` | Solo propietario; streaming del archivo temporal |
 | `POST /api/auth/login`, `/signup`, `/recover`, `/google` | Opcionales; Supabase configurado |
-| `GET /auth/callback` | Intercambio PKCE en el mismo navegador |
+| `GET /?code=...`, `GET /auth/callback` | Intercambio PKCE en el mismo navegador |
 | `DELETE /api/session` | Cierra sesión de cuenta; no obliga a registrarse |
 | `POST /api/auth/password` | Cuenta, sesión reciente; cambia contraseña |
 | `GET/PATCH /api/profile` | Cuenta; historial y preferencias propios |

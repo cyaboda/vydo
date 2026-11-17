@@ -11,7 +11,7 @@ export class Jobs {
   async init() { this.root=await mkdtemp(path.join(os.tmpdir(),'vydo-')); return this; }
   get(id,owner) {const j=this.items.get(id);return j?.owner===owner?j:null;}
   view(j) {return {id:j.id,status:j.status,format:j.format,quality:j.quality,progress:j.progress,error:j.error,
-    filename:j.filename,createdAt:j.createdAt,expiresAt:j.finishedAt?j.finishedAt+this.ttl:null};}
+    filename:j.filename,createdAt:j.createdAt,transferCount:j.transferCount||0,downloadedAt:j.downloadedAt||null,expiresAt:j.finishedAt?j.finishedAt+this.ttl:null};}
   create(input,owner) {
     if(this.closed || this.items.size>=this.maxJobs || (this.running.size>=this.concurrency && this.queue.length>=this.maxQueue))
       throw Object.assign(Error('Capacidad completa. Espera antes de volver a intentarlo.'),{status:429});

@@ -15,10 +15,14 @@
   function apply(value) {
     session=value;renderQuota(value.quota);
     $('sign-in').parentElement.hidden=Boolean(value.user);$('profile-button').hidden=!value.user;
+    for(const id of ['sign-in','sign-up']){const available=value.auth.enabled&&(id!=='sign-up'||value.auth.signup!==false||value.auth.google);$(id).disabled=!available;$(id).title=available?'':id==='sign-up'?'Registro público no disponible por ahora. Puedes descargar sin registrarte.':'Cuentas temporalmente no disponibles. Puedes descargar sin registrarte.';$(id).setAttribute('aria-label',available?$(id).textContent:$(id).textContent+': '+$(id).title);}
+    const signupPending=value.auth.enabled&&value.auth.signup===false&&!value.auth.google;
+    $('auth-status').hidden=Boolean(value.auth.enabled&&!signupPending);
+    $('auth-status').textContent=signupPending?'Registro público pendiente':value.auth.enabled?'':'Cuentas no disponibles';
     if(value.user){$('profile-button').textContent=(value.profile?.name||value.user.email||'U').slice(0,1).toUpperCase();}
     $('delete-account').disabled=!value.auth.canDelete;
-    if(value.ad){$('ad-link').href=value.ad.target;$('ad-image').src=value.ad.image;$('ad-image').alt=`Publicidad de ${value.ad.provider}`;$('advertisement').hidden=false;}
-    else $('advertisement').hidden=true;
+    $('delete-unavailable').hidden=Boolean(value.auth.canDelete);
+    window.vydoAds.configure(value.ad);
     window.dispatchEvent(new CustomEvent('vydo-session',{detail:value}));return value;
   }
   async function refresh(){return apply(await request('/api/session'));}
@@ -26,7 +30,7 @@
     mode=nextMode;const enabled=session?.auth.enabled;
     const labels={login:'Iniciar sesión',signup:'Crear cuenta',recover:'Recuperar contraseña',password:'Nueva contraseña'};
     $('account-title').textContent=labels[mode];$('account-submit').textContent=labels[mode];
-    $('auth-unavailable').hidden=Boolean(enabled);$('account-form').hidden=!enabled;
+    $('auth-unavailable').hidden=Boolean(enabled);$('account-form').hidden=!enabled||session?.auth.email===false;
     $('account-message').textContent='';
     const email=mode!=='password',password=mode!=='recover';
     $('account-email').hidden=!email;$('email-label').hidden=!email;$('account-email').required=email;

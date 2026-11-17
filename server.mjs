@@ -31,6 +31,7 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
   const store=providedStore||await createStore(storeOptions);
   const key=providedKey||await appSecret(secretOptions);
   const auth=providedAuth||createAuth({store,key,secure:secureCookies,origin});
+  await auth.initialize?.();
   const ad=advertising(adConfig),worker=token();
   const jobs=await new Jobs(engine,{concurrency,maxQueue,ttl,onFinish:async(j,status,internal)=>store.finish(j.id,status,internal)}).init();
   const tools=engine.health(),previews=new Map(),inspectors=new Set();let inspecting=0;
@@ -41,8 +42,9 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
     for(const [name,value] of Object.entries(security))res.setHeader(name,value);
     try{
       const url=new URL(req.url,'http://localhost'),route=url.pathname;
-      if(req.method==='GET'&&!route.startsWith('/api/')&&route!=='/auth/callback'){
-        const assets={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/app.js':'app.js','/account.js':'account.js','/favicon.svg':'favicon.svg',
+      const authCallback=route==='/auth/callback'||(route==='/'&&url.searchParams.has('code'));
+      if(req.method==='GET'&&!route.startsWith('/api/')&&!authCallback){
+        const assets={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/app.js':'app.js','/account.js':'account.js','/ads.js':'ads.js','/ads/advertisement.js':'ads/advertisement.js','/favicon.svg':'favicon.svg',
           '/theme.js':'theme.js','/LOGO_BLACK.webp':'LOGO_BLACK.webp','/LOGO_WHITE.webp':'LOGO_WHITE.webp'};
         if(!assets[route])return json(res,404,{error:'No encontrado.'});
         const types={html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',svg:'image/svg+xml',webp:'image/webp'};
@@ -52,6 +54,7 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
         try{await store.quota('health',false);}catch{return json(res,503,{ok:false});}
         return json(res,tools.ytDlp&&tools.ffmpeg?200:503,{ok:tools.ytDlp&&tools.ffmpeg,tools});
       }
+      if(route==='/api/ad-check'&&req.method==='GET')return json(res,200,{marker:'vydo-ad-check',enabled:Boolean(ad)});
       if(route.startsWith('/api/admin/')){
         if(!adminToken)return json(res,404,{error:'No encontrado.'});
         if(adminToken.length<32||!secureEqual(req.headers.authorization,'Bearer '+adminToken))return json(res,401,{error:'Acceso administrativo denegado.'});
@@ -64,7 +67,7 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
       }
       const ip=clientIP(req,trustedProxies),ipHash=digest(key,'network:'+networkIP(ip));
       const guestOwner=guest(req,res,key,secureCookies);
-      if(route==='/auth/callback'&&req.method==='GET'){
+      if(authCallback&&req.method==='GET'){
         await store.rate('callback:'+ipHash,10);
         try{const redirect=await auth.callback(req,res,url.searchParams.get('code')||'',url.searchParams.get('flow')==='recovery',url.searchParams.get('sb_flow_id'));res.writeHead(303,{Location:redirect});res.end();}
         catch{res.writeHead(303,{Location:'/?account=error'});res.end();}return;
@@ -148,6 +151,7 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
           if(j.status!=='done')throw bad('El archivo aún no está listo.',409);
           j.readers=(j.readers||0)+1;res.once('close',()=>{j.readers--;});
           const file=await stat(j.file);res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':file.size,'Content-Disposition':`attachment; filename="${j.filename}"`});
+          res.once('finish',()=>{j.transferCount=(j.transferCount||0)+1;j.downloadedAt=Date.now();});
           const stream=fs.createReadStream(j.file);stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;
         }
       }

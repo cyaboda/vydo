@@ -1,5 +1,7 @@
 # Configuración Supabase para vydo 3.2
 
+> Estado actual: [Supabase 3.3](supabase-3.3.md). El diagnóstico de este apartado describe la entrega 3.2 anterior.
+
 ## Estado de esta entrega
 
 No se ha creado ni seleccionado un proyecto Supabase dedicado a VYDO. Los proyectos conectados pertenecen a otras aplicaciones y no se modificaron. Se generó la migración con CLI 3.2.0 (`supabase migration new public_platform`) y se probó su ejecución y aislamiento RLS en PostgreSQL embebido; la CI prueba también el adaptador contra PostgreSQL 17.
