@@ -12,6 +12,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --chown=node:node lib.mjs engine.mjs jobs.mjs server.mjs store.mjs auth.mjs security.mjs ./
 COPY --chown=node:node migrations/ ./migrations/
 COPY --chown=node:node public/ ./public/
+COPY --chown=node:node scripts/check-auth.mjs scripts/check-production.mjs ./scripts/
 RUN mkdir /data && chown node:node /data
 ENV HOST=0.0.0.0 PORT=3000 TMPDIR=/tmp DATA_DIR=/data
 USER node

@@ -1,3 +1,4 @@
+import {spawnSync} from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {writeFile,access} from 'node:fs/promises';
@@ -60,7 +61,13 @@ test('preview validation, exact quality, consent, streaming and TTL preserved',a
  assert.equal((await call('/api/jobs/'+job.id+'/download')).status,409);
  assert.equal((await terminal(call,job.id)).status,'done');
  const file=await call('/api/jobs/'+job.id+'/download');assert.equal(await file.text(),'test-media');assert.match(file.headers.get('content-disposition'),/attachment/);
- const receipt=(await (await call('/api/jobs/'+job.id)).json()).job;assert.equal(receipt.transferCount,1);assert(receipt.downloadedAt);
+ let receipt;
+ for(let n=0;n<100;n++){
+   receipt=(await (await call('/api/jobs/'+job.id)).json()).job;
+   if(receipt.transferCount===1)break;
+   await new Promise(resolve=>setTimeout(resolve,10));
+ }
+ assert.equal(receipt.transferCount,1);assert(receipt.downloadedAt);
  assert.equal(receipt.filename,title+'.mp4');assert.match(receipt.id,/^[a-f0-9]{48}$/);
  assert.equal(decodeURIComponent(file.headers.get('content-disposition').split("filename*=UTF-8''")[1]),title+'.mp4');
  const internal=app.jobs.items.get(job.id);for(let n=0;n<100&&internal.readers;n++)await new Promise(r=>setTimeout(r,5));
@@ -104,4 +111,9 @@ test('unconfigured Auth stays optional; ads off by default and configured only b
  const configured=await setup(t,{adConfig:{provider:'test-only',image:'https://ads.example.test/image.png',target:'https://ads.example.test/offer'}});
  const data=await (await configured.call('/api/session')).json();assert.equal(data.ad.provider,'test-only');
  assert.match((await configured.call('/')).headers.get('content-security-policy'),/https:\/\/ads.example.test/);
+});
+
+test('ephemeral cloud deployment refuses SQLite fallback when PostgreSQL is required',()=>{
+ const result=spawnSync(process.execPath,['server.mjs'],{env:{...process.env,REQUIRE_POSTGRES:'true',DATABASE_URL:''},encoding:'utf8',windowsHide:true,timeout:10000});
+ assert.equal(result.status,1);assert.match(result.stderr,/Configura DATABASE_URL/);
 });

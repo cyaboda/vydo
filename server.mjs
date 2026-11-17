@@ -176,6 +176,7 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
   return {server,jobs,store,auth,async close(){clearInterval(timer);clearInterval(heartbeat);for(const c of inspectors)c.abort();server.closeAllConnections();await new Promise(r=>server.close(r));await jobs.close();if(!providedStore)await store.close();}};
 }
 if(process.argv[1]===fileURLToPath(import.meta.url)){
+  if(process.env.REQUIRE_POSTGRES==='true'&&!process.env.DATABASE_URL)throw Error('Configura DATABASE_URL: este despliegue exige PostgreSQL persistente.');
   if(process.env.HOST==='0.0.0.0'&&!process.env.PUBLIC_ORIGIN)throw Error('Configura PUBLIC_ORIGIN para publicar el servidor.');
   await cleanStaleRoots();const app=await createApp();
   app.server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log('vydo escuchando en el puerto',app.server.address().port));
