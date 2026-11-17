@@ -1,9 +1,11 @@
 .git
-.env
+.env*
 node_modules
 coverage
 tests
-scripts
+scripts/*
+!scripts/check-auth.mjs
+!scripts/check-production.mjs
 docs
 data/
 supabase/
