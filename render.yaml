@@ -2,16 +2,27 @@ services:
   - type: web
     name: vydo
     runtime: docker
+    plan: free
+    branch: main
+    autoDeployTrigger: "off"
+    domains:
+      - vydo.download
     healthCheckPath: /api/health
-    disk:
-      name: vydo-data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: PUBLIC_ORIGIN
-        sync: false
+        value: https://vydo.download
       - key: COOKIE_SECURE
         value: "true"
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: "10000"
+      - key: TMPDIR
+        value: /tmp
+      - key: REQUIRE_POSTGRES
+        value: "true"
+      - key: TRUSTED_PROXY_CIDRS
+        sync: false
       - key: APP_SECRET
         sync: false
       - key: DATABASE_URL
@@ -22,3 +33,7 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: GOOGLE_AUTH_ENABLED
+        value: "false"
+      - key: AUTH_PUBLIC_SIGNUP_ENABLED
+        value: "false"

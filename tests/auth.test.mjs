@@ -12,12 +12,14 @@ const verified={id,email:'alice@example.test',email_confirmed_at:'2026-01-01T00:
 function response(){const headers={};return {getHeader:name=>headers[name],setHeader:(name,value)=>{headers[name]=value;},headers};}
 function cookies(res){return (res.headers['Set-Cookie']||[]).map(v=>v.split(';')[0]).join('; ');}
 async function setup(t){
- const store=new Store(await sqliteAdapter(':memory:')),key=randomBytes(32),requests=[];let revoked=false,unverified=false;
+ const store=new Store(await sqliteAdapter(':memory:')),key=randomBytes(32),requests=[];let revoked=false,unverified=false,mailFailure=false;
  const upstream=http.createServer(async(req,res)=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=chunks.length?JSON.parse(Buffer.concat(chunks)):{};
   requests.push({url:req.url,body,authorization:req.headers.authorization});
   res.setHeader('Content-Type','application/json');
   const user={...verified,email_confirmed_at:unverified?null:verified.email_confirmed_at};
+  if(req.url==='/auth/v1/settings')return res.end(JSON.stringify({external:{email:true,google:false},disable_signup:false}));
+  if(mailFailure&&(/\/signup|\/recover/.test(req.url))){res.writeHead(429);return res.end(JSON.stringify({code:'over_email_send_rate_limit',msg:'Rate limit exceeded'}));}
   if(req.url.startsWith('/auth/v1/token')){
    const grant=new URL(req.url,'http://localhost').searchParams.get('grant_type');
    if(grant==='pkce'&&(!body.code_verifier||body.auth_code!=='authorized-code')){res.writeHead(400);return res.end(JSON.stringify({error:'invalid_grant'}));}
@@ -35,9 +37,9 @@ async function setup(t){
  });
  await new Promise(r=>upstream.listen(0,'127.0.0.1',r));
  const url='http://127.0.0.1:'+upstream.address().port;
- const auth=createAuth({store,key,origin:'http://localhost:3000',url,publishableKey:'test-publishable-not-a-real-key',serviceKey:'test-service-not-a-real-key',google:true});
+ const auth=createAuth({store,key,origin:'http://localhost:3000',url,publishableKey:'test-publishable-not-a-real-key',serviceKey:'test-service-not-a-real-key',google:true,publicSignup:true});
  t.after(async()=>{upstream.closeAllConnections();await new Promise(r=>upstream.close(r));await store.close();});
- return {auth,store,key,requests,url,revoke:()=>{revoked=true;},unverify:()=>{unverified=true;}};
+ return {auth,store,key,requests,url,revoke:()=>{revoked=true;},unverify:()=>{unverified=true;},failMail:()=>{mailFailure=true;}};
 }
 test('real Supabase SDK uses server validation, HttpOnly opaque session, encryption and logout',async t=>{
  const {auth,store,key,requests,revoke}=await setup(t);const res=response();
@@ -77,4 +79,15 @@ test('account deletion revokes sessions first, uses server-only admin key and er
  const deletion=requests.findIndex(r=>r.url.includes('/admin/users/'));
  assert(logout>=0&&deletion>logout);assert.equal(requests[deletion].authorization,'Bearer test-service-not-a-real-key');
  assert.equal(await auth.resolve(req,response()),null);
+});
+
+test('Auth readiness uses real provider flags and defaults public signup to disabled',async t=>{
+ const {auth,store,key,url}=await setup(t);await auth.initialize();assert.equal(auth.config.enabled,true);assert.equal(auth.config.google,false);assert.equal(auth.config.signup,true);
+ const disabled=createAuth({store,key,origin:'http://localhost:3000',url,publishableKey:'test-key'});await disabled.initialize();assert.equal(disabled.config.enabled,true);assert.equal(disabled.config.signup,false);
+ await assert.rejects(disabled.action('signup',{headers:{}},response(),{email:verified.email,password:'test-password'}),/registro público/i);
+ const missing=createAuth({store,key,url,publishableKey:'test-key'});assert.equal(missing.config.enabled,false);assert.equal(await missing.resolve({headers:{}},response()),null);
+});
+test('mail delivery failures are reported instead of claiming a verification email was sent',async t=>{
+ const {auth,failMail}=await setup(t);failMail();
+ for(const action of ['signup','recover'])await assert.rejects(auth.action(action,{headers:{}},response(),{email:verified.email,password:'test-password'}),e=>e.status===429);
 });

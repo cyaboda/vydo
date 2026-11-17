@@ -1,3 +1,4 @@
+import {spawnSync} from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {writeFile,access} from 'node:fs/promises';
@@ -52,13 +53,23 @@ test('separate anonymous browsers on one IP share quota but never job ownership'
  assert.equal((await create(p,{},other)).status,400);
 });
 test('preview validation, exact quality, consent, streaming and TTL preserved',async t=>{
- const {app,call,analyze,create}=await setup(t);const p=await analyze();
+ const title='Canción 日本語 (Official Video)';
+ const {app,call,analyze,create}=await setup(t,{engine:{...fakeEngine(),inspect:async()=>({...metadata,title})}});const p=await analyze();
  assert.equal((await create(p,{authorized:false})).status,400);assert.equal((await create(p,{quality:'1080'})).status,400);
  assert.equal((await create(p,{url:'https://youtu.be/dQw4w9WgXcQ'})).status,400);
  const started=await create(p);assert.equal(started.status,202);const {job}=await started.json();
  assert.equal((await call('/api/jobs/'+job.id+'/download')).status,409);
  assert.equal((await terminal(call,job.id)).status,'done');
  const file=await call('/api/jobs/'+job.id+'/download');assert.equal(await file.text(),'test-media');assert.match(file.headers.get('content-disposition'),/attachment/);
+ let receipt;
+ for(let n=0;n<100;n++){
+   receipt=(await (await call('/api/jobs/'+job.id)).json()).job;
+   if(receipt.transferCount===1)break;
+   await new Promise(resolve=>setTimeout(resolve,10));
+ }
+ assert.equal(receipt.transferCount,1);assert(receipt.downloadedAt);
+ assert.equal(receipt.filename,title+'.mp4');assert.match(receipt.id,/^[a-f0-9]{48}$/);
+ assert.equal(decodeURIComponent(file.headers.get('content-disposition').split("filename*=UTF-8''")[1]),title+'.mp4');
  const internal=app.jobs.items.get(job.id);for(let n=0;n<100&&internal.readers;n++)await new Promise(r=>setTimeout(r,5));
  const dir=internal.dir;await app.jobs.cleanup(Date.now()+1200010);assert.equal((await call('/api/jobs/'+job.id)).status,404);await assert.rejects(access(dir));
 });
@@ -100,4 +111,9 @@ test('unconfigured Auth stays optional; ads off by default and configured only b
  const configured=await setup(t,{adConfig:{provider:'test-only',image:'https://ads.example.test/image.png',target:'https://ads.example.test/offer'}});
  const data=await (await configured.call('/api/session')).json();assert.equal(data.ad.provider,'test-only');
  assert.match((await configured.call('/')).headers.get('content-security-policy'),/https:\/\/ads.example.test/);
+});
+
+test('ephemeral cloud deployment refuses SQLite fallback when PostgreSQL is required',()=>{
+ const result=spawnSync(process.execPath,['server.mjs'],{env:{...process.env,REQUIRE_POSTGRES:'true',DATABASE_URL:''},encoding:'utf8',windowsHide:true,timeout:10000});
+ assert.equal(result.status,1);assert.match(result.stderr,/Configura DATABASE_URL/);
 });

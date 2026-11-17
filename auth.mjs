@@ -4,10 +4,14 @@ import {cookie,setCookie,digest,seal,unseal} from './security.mjs';
 const fail=(message,status=400)=>Object.assign(Error(message),{status});
 
 export function createAuth({store,key,secure=false,origin,url=process.env.SUPABASE_URL,publishableKey=process.env.SUPABASE_PUBLISHABLE_KEY,
-  serviceKey=process.env.SUPABASE_SERVICE_ROLE_KEY,google=process.env.GOOGLE_AUTH_ENABLED==='true'}={}) {
-  const enabled=Boolean(url&&publishableKey);
-  if(enabled){const u=new URL(url);if(u.protocol!=='https:'&&u.hostname!=='127.0.0.1'&&u.hostname!=='localhost')throw Error('Supabase requiere HTTPS.');if(!origin)throw Error('Configura PUBLIC_ORIGIN para Supabase Auth.');}
-  const publicConfig={enabled,google:enabled&&google,canDelete:enabled&&Boolean(serviceKey)};
+  serviceKey=process.env.SUPABASE_SERVICE_ROLE_KEY,google=process.env.GOOGLE_AUTH_ENABLED==='true',publicSignup=process.env.AUTH_PUBLIC_SIGNUP_ENABLED==='true'}={}) {
+  let enabled=Boolean(url&&publishableKey&&origin);
+  if(enabled){try{const u=new URL(url),o=new URL(origin);enabled=(u.protocol==='https:'||['127.0.0.1','localhost'].includes(u.hostname))&&['http:','https:'].includes(o.protocol);}catch{enabled=false;}}
+  const publicConfig={enabled,signup:enabled&&publicSignup,google:enabled&&google,canDelete:enabled&&Boolean(serviceKey)};
+  function mailError(error){
+    if(!error||error.code==='user_already_exists')return;
+    throw fail(error.status===429?'El servicio de correo ha limitado las solicitudes. Inténtalo más tarde.':'No se pudo enviar el correo de acceso. Inténtalo más tarde.',error.status===429?429:503);
+  }
   async function context(req,res,{create=false}={}){
     let sid=cookie(req,'vydo_account');if(!/^[a-f0-9]{48}$/.test(sid))sid='';
     const row=sid?await store.session(digest(key,sid)):null;
@@ -35,9 +39,22 @@ export function createAuth({store,key,secure=false,origin,url=process.env.SUPABA
     await ctx.identify(user.id);return {id:user.id,email:user.email};
   }
   return {config:publicConfig,
-    async resolve(req,res){if(!enabled)return null;const ctx=await context(req,res);if(!ctx)return null;const user=await verified(ctx);if(!user){await ctx.clear();return null;}return {...user,recent:ctx.state.recent||0,ctx};},
+    async initialize(){
+      if(!enabled)return;
+      try{
+        const response=await fetch(url+'/auth/v1/settings',{headers:{apikey:publishableKey},signal:AbortSignal.timeout(10000)});
+        if(!response.ok)throw Error('Auth unavailable');const settings=await response.json();
+        publicConfig.email=Boolean(settings.external?.email);publicConfig.signup=Boolean(publicSignup&&publicConfig.email&&!settings.disable_signup);
+        publicConfig.google=Boolean(google&&settings.external?.google);publicConfig.enabled=publicConfig.email||publicConfig.google;
+        publicConfig.canDelete=publicConfig.enabled&&Boolean(serviceKey);
+      }catch{Object.assign(publicConfig,{enabled:false,email:false,signup:false,google:false,canDelete:false});}
+    },
+    async resolve(req,res){if(!publicConfig.enabled)return null;const ctx=await context(req,res);if(!ctx)return null;const user=await verified(ctx);if(!user){await ctx.clear();return null;}return {...user,recent:ctx.state.recent||0,ctx};},
     async action(action,req,res,data={}){
-      requireEnabled();const ctx=await context(req,res,{create:true});
+      requireEnabled();if(!publicConfig.enabled)throw fail('El servicio de cuentas no está disponible.',503);
+      if(action!=='google'&&publicConfig.email===false)throw fail('El acceso por correo no está disponible.',503);
+      if(action==='signup'&&publicConfig.signup===false)throw fail('El registro público por correo no está disponible por ahora. Puedes descargar sin registrarte.',503);
+      const ctx=await context(req,res,{create:true});
       if(action==='login'){
         const {error}=await ctx.client.auth.signInWithPassword({email:data.email,password:data.password});
         if(error)throw fail('Correo o contraseña incorrectos, o correo sin verificar.',401);
@@ -45,25 +62,25 @@ export function createAuth({store,key,secure=false,origin,url=process.env.SUPABA
         ctx.state.recent=Date.now();await ctx.rotate();return {ok:true};
       }
       if(action==='signup'){
-        const {error}=await ctx.client.auth.signUp({email:data.email,password:data.password,options:{emailRedirectTo:origin+'/auth/callback'}});
-        if(error&&error.status>=500)throw fail('El servicio de registro no está disponible.',503);
+        const {error}=await ctx.client.auth.signUp({email:data.email,password:data.password,options:{emailRedirectTo:origin+'/'}});
+        mailError(error);
         await ctx.persist();return {message:'Si el correo es válido, recibirás un enlace para verificar tu cuenta.'};
       }
       if(action==='recover'){
-        await ctx.client.auth.resetPasswordForEmail(data.email,{redirectTo:origin+'/auth/callback?flow=recovery'});
+        const {error}=await ctx.client.auth.resetPasswordForEmail(data.email,{redirectTo:origin+'/'});mailError(error);
         await ctx.persist();return {message:'Si existe una cuenta con ese correo, recibirás un enlace de recuperación.'};
       }
       if(action==='google'){
-        if(!google)throw fail('Google aún no está configurado.',503);
-        const {data:result,error}=await ctx.client.auth.signInWithOAuth({provider:'google',options:{redirectTo:origin+'/auth/callback',skipBrowserRedirect:true}});
+        if(!publicConfig.google)throw fail('Google aún no está configurado.',503);
+        const {data:result,error}=await ctx.client.auth.signInWithOAuth({provider:'google',options:{redirectTo:origin+'/',skipBrowserRedirect:true}});
         if(error||!result.url||new URL(result.url).origin!==new URL(url).origin)throw fail('No se pudo iniciar el acceso con Google.',503);
         await ctx.persist();return {url:result.url};
       }
       throw fail('Acción no disponible.',404);
     },
     async callback(req,res,code,recovery=false,flowId){requireEnabled();const ctx=await context(req,res);if(!ctx)throw fail('El enlace debe abrirse en el mismo navegador donde lo solicitaste.');
-      const {error}=await ctx.client.auth.exchangeCodeForSession(code,flowId?{flowId}:undefined);if(error)throw fail('El enlace caducó o no es válido. Solicita otro.');
-      if(!await verified(ctx))throw fail('No se pudo verificar el correo.');ctx.state.recent=Date.now();await ctx.rotate();return recovery?'/?account=recovery':'/';
+      const {data,error}=await ctx.client.auth.exchangeCodeForSession(code,flowId?{flowId}:undefined);if(error)throw fail('El enlace caducó o no es válido. Solicita otro.');
+      if(!await verified(ctx))throw fail('No se pudo verificar el correo.');ctx.state.recent=Date.now();await ctx.rotate();return recovery||data.redirectType==='recovery'?'/?account=recovery':'/';
     },
     async logout(user,req,res){
       if(!enabled)return {ok:true};

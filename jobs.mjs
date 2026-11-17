@@ -1,7 +1,7 @@
 import {mkdtemp, rm, readdir, stat, utimes} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {token} from './lib.mjs';
+import {token,downloadFilename} from './lib.mjs';
 
 export class Jobs {
   constructor(engine,{concurrency=1,maxQueue=3,ttl=1200000,maxJobs=32,onFinish=async()=>{}}={}) {
@@ -11,7 +11,7 @@ export class Jobs {
   async init() { this.root=await mkdtemp(path.join(os.tmpdir(),'vydo-')); return this; }
   get(id,owner) {const j=this.items.get(id);return j?.owner===owner?j:null;}
   view(j) {return {id:j.id,status:j.status,format:j.format,quality:j.quality,progress:j.progress,error:j.error,
-    filename:j.filename,createdAt:j.createdAt,expiresAt:j.finishedAt?j.finishedAt+this.ttl:null};}
+    filename:j.filename,createdAt:j.createdAt,transferCount:j.transferCount||0,downloadedAt:j.downloadedAt||null,expiresAt:j.finishedAt?j.finishedAt+this.ttl:null};}
   create(input,owner) {
     if(this.closed || this.items.size>=this.maxJobs || (this.running.size>=this.concurrency && this.queue.length>=this.maxQueue))
       throw Object.assign(Error('Capacidad completa. Espera antes de volver a intentarlo.'),{status:429});
@@ -31,7 +31,7 @@ export class Jobs {
       j.file=await this.engine.process(j,j.dir,p=>{j.progress=p;},j.controller.signal);
       if(j.controller.signal.aborted)throw Error('Trabajo cancelado.');
       for(const name of await readdir(j.dir))if(path.join(j.dir,name)!==j.file)await rm(path.join(j.dir,name),{force:true});
-      j.filename=`vydo-${j.id.slice(0,8)}.${j.format}`;
+      j.filename=downloadFilename(j.title,j.format);
       await this.onFinish(j,'done',false);j.status='done';j.progress={phase:'done',percent:100};
     } catch(e) {j.error=e.message;
       if(j.dir)await rm(j.dir,{recursive:true,force:true}).catch(()=>{});

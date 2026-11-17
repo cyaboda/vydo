@@ -41,7 +41,7 @@ const base = 'http://127.0.0.1:' + app.server.address().port;
 let browser;
 try {
   browser = await chromium.launch({headless: true, ...(process.env.BROWSER_BIN ? {executablePath: process.env.BROWSER_BIN} : {})});
-  const context = await browser.newContext({colorScheme: 'light', viewport: {width: 1753, height: 897}});
+  const context = await browser.newContext({colorScheme: 'light', deviceScaleFactor: 1, viewport: {width: 1366, height: 768}});
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -55,16 +55,19 @@ try {
   assert.equal(await page.locator('a[href*="github"]').count(), 0);
   assert.equal(await page.locator('#preview').isVisible(), false);
   assert.equal(await page.locator('.hero .logo-light').evaluate(img => img.naturalWidth > 0), true);
-  await page.screenshot({path: path.join(output, 'vydo-3.2-desktop-light.png'), fullPage: true});
+  await page.screenshot({path: path.join(output, 'vydo-3.3-desktop-light.png'), fullPage: true});
   await page.locator('#theme-toggle').click();
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
   assert.equal(await page.locator('#theme-toggle').getAttribute('aria-pressed'), 'true');
-  await page.screenshot({path: path.join(output, 'vydo-3.2-desktop-dark.png'), fullPage: true});
+  await page.screenshot({path: path.join(output, 'vydo-3.3-desktop-dark.png'), fullPage: true});
   await page.reload(); assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
   await page.emulateMedia({colorScheme: 'light'}); assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
   await page.locator('#theme-toggle').click();
-  for (const width of [320, 390, 768, 1024, 1753]) {
-    await page.setViewportSize({width, height: width < 600 ? 844 : 897});
+  for (const [width,height] of [[320,844],[390,844],[768,897],[1024,768],[1366,768],[1920,1080]]) {
+    await page.setViewportSize({width, height});
+    assert.equal(await page.evaluate(()=>visualViewport.scale),1,'Browser zoom must remain at 100%');
+    assert(['1','normal'].includes(await page.locator('html').evaluate(el=>getComputedStyle(el).zoom)));
+    assert.equal(await page.locator('html').evaluate(el=>getComputedStyle(el).transform),'none');
     const overflow = await page.evaluate(() => ({
       exists: document.documentElement.scrollWidth > innerWidth,
       elements: [...document.querySelectorAll('body *')].filter(el => {
@@ -74,7 +77,7 @@ try {
     if (overflow.exists) await page.screenshot({path: path.join(output, `overflow-${width}.png`), fullPage: true});
     assert.equal(overflow.exists, false, `Overflow at ${width}px: ${JSON.stringify(overflow.elements)}`);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight),false,`Unnecessary initial vertical scroll at ${width}px`);
-    if (width === 390 || width === 768) await page.screenshot({path: path.join(output, `vydo-3.2-${width}-light.png`), fullPage: true});
+    if ([390,768,1366,1920].includes(width)) await page.screenshot({path: path.join(output, `vydo-3.3-${width}-light.png`), fullPage: true});
   }
   // No analysis may run until the user confirms authorization.
   await page.locator('#url').fill('https://youtu.be/LY43o01dkU4');
@@ -83,7 +86,7 @@ try {
   await page.locator('#preview').waitFor(); assert.deepEqual(await page.locator('#quality option').allTextContents(), ['720p', '360p']);
   await page.locator('#quality').selectOption('360'); await page.locator('#start').click();
   await page.locator('#progress-panel').waitFor();
-  await page.screenshot({path: path.join(output, 'vydo-3.2-progress.png'), fullPage: true});
+  await page.screenshot({path: path.join(output, 'vydo-3.3-progress.png'), fullPage: true});
   // Reload recovers the same authenticated job instead of creating a duplicate.
   await page.reload(); await page.locator('#finished').waitFor(); assert.equal(submitted.length, 1);
   let pending = page.waitForEvent('download'); await page.locator('#download').click();
@@ -111,8 +114,8 @@ try {
     pending = page.waitForEvent('download'); await page.locator('#download').click(); assert.match((await pending).suggestedFilename(), new RegExp(`\\.${format}$`));
   }
   await page.setViewportSize({width: 390, height: 844});
-  await page.screenshot({path: path.join(output, 'vydo-3.2-mobile-result.png'), fullPage: true});
-  await page.locator('#theme-toggle').click(); await page.screenshot({path: path.join(output, 'vydo-3.2-mobile-dark.png'), fullPage: true});
+  await page.screenshot({path: path.join(output, 'vydo-3.3-mobile-result.png'), fullPage: true});
+  await page.locator('#theme-toggle').click(); await page.screenshot({path: path.join(output, 'vydo-3.3-mobile-dark.png'), fullPage: true});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   // Keyboard controls, validation errors and cancellation remain functional.
   await page.locator('#theme-toggle').focus(); await page.keyboard.press('Space');
@@ -146,5 +149,5 @@ try {
   await systemPage.emulateMedia({colorScheme: 'light'}); await systemPage.waitForFunction(() => document.documentElement.dataset.theme === 'light');
   await systemContext.close();
   assert.deepEqual(errors, []);
-  console.log('UI PASS: original logos, both themes, persistence/system preference, consent, exact quality, job recovery, five formats, authenticated file downloads, 320–1753px layouts; no browser errors.');
+  console.log('UI PASS: original logos, both themes, persistence/system preference, consent, exact quality, job recovery, five formats, authenticated file downloads, 320–1920px layouts at 100% zoom; no browser errors.');
 } finally { await browser?.close(); await app.close(); }

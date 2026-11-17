@@ -33,3 +33,25 @@ export function secureEqual(a,b){
   return aa.length===bb.length && timingSafeEqual(aa,bb);
 }
 export function token(){return randomBytes(24).toString('hex');}
+
+// Display name only: never use a video title as an internal path or job identifier.
+export function downloadFilename(title,format){
+  if(!FORMATS.has(format))throw Error('Formato no compatible.');
+  let name=String(title??'').toWellFormed().normalize('NFC')
+    .replace(/[<>:"/\\|?*\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,'')
+    .trim().replace(/^[. ]+|[. ]+$/g,'');
+  if(!name)name='vydo';
+  if(/^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(name))name='_'+name;
+  const extension='.'+format;
+  let bounded='';
+  for(const char of name){if(Buffer.byteLength(bounded+char+extension,'utf8')>180)break;bounded+=char;}
+  return bounded.replace(/[. ]+$/g,'')+extension;
+}
+
+export function downloadDisposition(filename){
+  const value=String(filename).toWellFormed();
+  const fallback=value.normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^\x20-\x7e]|["\\/<>:|?*]/g,'_');
+  const utf8=encodeURIComponent(value).replace(/['()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase());
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${utf8}`;
+}

@@ -1,6 +1,8 @@
 const $ = id => document.getElementById(id);
+function storedJob(){try{return sessionStorage.getItem('vydo_job');}catch{return null;}}
+function rememberJob(id){try{if(id)sessionStorage.setItem('vydo_job',id);else sessionStorage.removeItem('vydo_job');}catch{/* Downloads continue in memory when browser storage is unavailable. */}}
 const state = {
-  preview: null, url: null, job: sessionStorage.getItem('vydo_job'),
+  preview: null, url: null, job: storedJob(),
   timer: null, busy: false, audio: 'mp3', preferredQuality: null, accountId: null
 };
 const audioFormats = ['mp3', 'm4a', 'wav', 'flac'];
@@ -108,12 +110,12 @@ async function startJob() {
       url: state.url, previewId: state.preview.id, authorized: true,
       format: selectedFormat(), quality: $('quality').value || '720'
     });
-    state.job = job.id; sessionStorage.setItem('vydo_job', job.id);
+    state.job = job.id; rememberJob(job.id);
     $('preview').hidden = true; poll();
   } catch (err) { busy(false); error(err.message); }
 }
 function finish() {
-  busy(false); state.job = null; sessionStorage.removeItem('vydo_job');
+  busy(false); state.job = null; rememberJob(null);
   $('cancel').hidden = true; $('retry').hidden = true; $('analyze-label').textContent = 'Descargar';
 }
 async function poll() {
@@ -133,6 +135,7 @@ async function poll() {
       : progress.phase === 'queued' ? 'Tu archivo se preparará cuando haya capacidad disponible.' : '';
     if (job.status === 'done') {
       $('download').href = `/api/jobs/${job.id}/download`; $('download').download = job.filename;
+      $('download').dataset.transferCount=String(job.transferCount||0);
       $('expiry').textContent = `Disponible hasta las ${new Date(job.expiresAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}.`;
       $('finished').hidden = false; $('progress-panel').hidden = true; finish(); return;
     }
