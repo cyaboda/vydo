@@ -6,7 +6,6 @@
   const chosen = saved === 'light' || saved === 'dark' ? saved : null;
   function apply(theme) {
     document.documentElement.dataset.theme = theme;
-    document.getElementById('favicon').href = theme === 'dark' ? '/LOGO_WHITE.webp' : '/LOGO_BLACK.webp';
     document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#0c0d13' : '#ffffff';
     const button = document.getElementById('theme-toggle');
     if (button) {

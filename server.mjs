@@ -44,10 +44,10 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
       const url=new URL(req.url,'http://localhost'),route=url.pathname;
       const authCallback=route==='/auth/callback'||(route==='/'&&url.searchParams.has('code'));
       if(req.method==='GET'&&!route.startsWith('/api/')&&!authCallback){
-        const assets={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/app.js':'app.js','/account.js':'account.js','/ads.js':'ads.js','/ads/advertisement.js':'ads/advertisement.js','/favicon.svg':'favicon.svg',
+        const assets={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/app.js':'app.js','/account.js':'account.js','/ads.js':'ads.js','/ads/advertisement.js':'ads/advertisement.js','/favicon.svg':'favicon.svg','/favicon.ico':'favicon.ico',
           '/theme.js':'theme.js','/LOGO_BLACK.webp':'LOGO_BLACK.webp','/LOGO_WHITE.webp':'LOGO_WHITE.webp'};
         if(!assets[route])return json(res,404,{error:'No encontrado.'});
-        const types={html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',svg:'image/svg+xml',webp:'image/webp'};
+        const types={html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',svg:'image/svg+xml',ico:'image/x-icon',webp:'image/webp'};
         res.setHeader('Content-Type',types[assets[route].split('.').pop()]);return res.end(await readFile(new URL(`./public/${assets[route]}`,import.meta.url)));
       }
       if(route==='/api/health'&&req.method==='GET'){
