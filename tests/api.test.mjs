@@ -52,7 +52,8 @@ test('separate anonymous browsers on one IP share quota but never job ownership'
  assert.equal((await create(p,{},other)).status,400);
 });
 test('preview validation, exact quality, consent, streaming and TTL preserved',async t=>{
- const {app,call,analyze,create}=await setup(t);const p=await analyze();
+ const title='Canción 日本語 (Official Video)';
+ const {app,call,analyze,create}=await setup(t,{engine:{...fakeEngine(),inspect:async()=>({...metadata,title})}});const p=await analyze();
  assert.equal((await create(p,{authorized:false})).status,400);assert.equal((await create(p,{quality:'1080'})).status,400);
  assert.equal((await create(p,{url:'https://youtu.be/dQw4w9WgXcQ'})).status,400);
  const started=await create(p);assert.equal(started.status,202);const {job}=await started.json();
@@ -60,6 +61,8 @@ test('preview validation, exact quality, consent, streaming and TTL preserved',a
  assert.equal((await terminal(call,job.id)).status,'done');
  const file=await call('/api/jobs/'+job.id+'/download');assert.equal(await file.text(),'test-media');assert.match(file.headers.get('content-disposition'),/attachment/);
  const receipt=(await (await call('/api/jobs/'+job.id)).json()).job;assert.equal(receipt.transferCount,1);assert(receipt.downloadedAt);
+ assert.equal(receipt.filename,title+'.mp4');assert.match(receipt.id,/^[a-f0-9]{48}$/);
+ assert.equal(decodeURIComponent(file.headers.get('content-disposition').split("filename*=UTF-8''")[1]),title+'.mp4');
  const internal=app.jobs.items.get(job.id);for(let n=0;n<100&&internal.readers;n++)await new Promise(r=>setTimeout(r,5));
  const dir=internal.dir;await app.jobs.cleanup(Date.now()+1200010);assert.equal((await call('/api/jobs/'+job.id)).status,404);await assert.rejects(access(dir));
 });

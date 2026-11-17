@@ -2,6 +2,48 @@
 
 No se ha contratado un servicio ni publicado una instancia externa en esta entrega. Las plantillas no equivalen a un despliegue. Revisa precios y condiciones antes de activar cualquier hosting; `render.yaml` solicita disco persistente y puede implicar pago.
 
+## Preparación de producción: vydo.download (3.3)
+
+Dominio oficial: **https://vydo.download**. Se reutilizan `Dockerfile`, `compose.yaml` y `.env.example`; no se necesita una segunda arquitectura. El diseño y motor permanecen intactos. No se ha ejecutado un despliegue ni cambiado Cloudflare.
+
+Preparación local, sin arrancar servicios:
+
+```sh
+cp .env.example .env.production
+# Editar .env.production: conservar secretos fuera de Git.
+docker compose --env-file .env.production config --quiet
+```
+
+Valores de producción:
+
+```dotenv
+PUBLIC_ORIGIN=https://vydo.download
+COOKIE_SECURE=true
+DATABASE_URL=
+AUTH_PUBLIC_SIGNUP_ENABLED=false
+GOOGLE_AUTH_ENABLED=false
+```
+
+Completar las claves Supabase reales en ese archivo mediante un canal privado. `DATA_DIR=/data` ya lo fija Compose. `DATABASE_URL` vacío conserva SQLite en el volumen `vydo-data`: usar una instancia con disco persistente, mantener el mismo volumen/nombre de proyecto Compose y respaldar `/data` junto con `secret.key`. No ejecutar `docker compose down -v`. Esto preserva cuotas 5/15, sesiones y preferencias al actualizar. Si se cambia a PostgreSQL, migrar primero y definir `APP_SECRET` estable; no se activa automáticamente por usar Supabase Auth.
+
+La configuración existente publica el puerto 3000 solo en loopback. En un servidor propio se necesita un proxy HTTPS en ese mismo host que termine TLS con certificado válido para `vydo.download`, redirija HTTP a HTTPS y reenvíe a `http://127.0.0.1:3000`. En hosting administrado, conectar el dominio al servicio Docker, habilitar TLS del proveedor y montar `/data` de forma persistente. No exponer directamente el puerto de Node. No utilizar hosting estático/GitHub Pages.
+
+El proxy debe mantener el Host, normalizar `X-Forwarded-For` y permitir streaming y tiempos de preparación de hasta 10 minutos. No cachear API, callbacks, respuestas con cookies ni retornos `/?code=...`. Establecer `TRUSTED_PROXY_CIDRS` con las redes **reales del salto que conecta al contenedor**, que dependen del hosting/red Docker; no inventarlas ni confiar en todos los orígenes. Comprobar que las cuotas no agrupen a todos los visitantes bajo la IP del proxy antes de publicar. Mantener sin cambios los límites de concurrencia actuales.
+
+DNS a preparar en Cloudflare **después de elegir hosting** (no crear todos a la vez):
+
+| Modalidad | Tipo / nombre | Valor pendiente |
+| --- | --- | --- |
+| Servidor con IPv4 | A / `@` | IPv4 pública asignada al servidor |
+| Servidor con IPv6 funcional | AAAA / `@` | IPv6 pública asignada; omitir si no existe |
+| Hosting con destino DNS | CNAME / `@` | Hostname exacto indicado por el proveedor; usar flattening del apex si corresponde |
+| Verificación de propiedad | TXT / nombre indicado | Token exacto entregado por el hosting, solo si lo requiere |
+| `www`, opcional | CNAME / `www` | `vydo.download`, con certificado y redirección HTTPS hacia el dominio oficial |
+
+Usar la modalidad A/AAAA o CNAME indicada por el hosting; no publicar direcciones de ejemplo. Inicialmente validar DNS/certificado conforme a las instrucciones del proveedor. Si se activa el proxy Cloudflare, usar [Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) y certificado válido en el origen, nunca Flexible. Configurar bypass de caché para rutas dinámicas. No reemplazar registros de correo existentes. SPF/DKIM/DMARC y verificaciones SMTP se añadirán con los valores reales del proveedor de correo, cuando se elija.
+
+Antes del lanzamiento verificar desde HTTPS: cookie `Secure` y HttpOnly, callback Auth, descarga Unicode, streaming, cuota compartida por red correcta y persistencia tras recrear el contenedor. La configuración se ha revisado, pero el dominio, DNS, TLS y hosting **no están probados en producción**.
+
 ## Recursos y aislamiento
 
 Recomendación inicial para una instancia de poco tráfico: 2 vCPU, 1–2 GiB RAM, 1 GiB temporal y al menos 1 GiB persistente para metadatos. No son garantías de rendimiento: transcodificar 1080p consume CPU. Se admite un proceso de medios activo por worker, tres en cola local y cuatro reservas globales; no escales procesos sin revisar CPU, memoria y temporales.

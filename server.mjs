@@ -2,7 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import {readFile,stat} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {parseYoutubeUrl,validateRequest,secureEqual,token,FORMATS,QUALITIES} from './lib.mjs';
+import {parseYoutubeUrl,validateRequest,secureEqual,token,FORMATS,QUALITIES,downloadDisposition} from './lib.mjs';
 import {createEngine} from './engine.mjs';
 import {Jobs,cleanStaleRoots} from './jobs.mjs';
 import {createStore} from './store.mjs';
@@ -139,7 +139,7 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
         const id=token();
         const reserved=await store.reserve({id,subject,ip:ipHash,registered:Boolean(user),worker,userId:user?.id,title:p.title,
           videoId:new URL(p.url).searchParams.get('v'),format:validated.format,quality:validated.quality});
-        try{const job=jobs.create({id,...validated,duration:p.duration},owner);return json(res,202,{job:jobs.view(job),quota:reserved});}
+        try{const job=jobs.create({id,...validated,title:p.title,duration:p.duration},owner);return json(res,202,{job:jobs.view(job),quota:reserved});}
         catch(e){await store.release(id);throw e;}
       }
       const match=route.match(/^\/api\/jobs\/([a-f0-9]{48})(\/download)?$/);
@@ -150,7 +150,7 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
         if(req.method==='GET'&&match[2]){
           if(j.status!=='done')throw bad('El archivo aún no está listo.',409);
           j.readers=(j.readers||0)+1;res.once('close',()=>{j.readers--;});
-          const file=await stat(j.file);res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':file.size,'Content-Disposition':`attachment; filename="${j.filename}"`});
+          const file=await stat(j.file);res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':file.size,'Content-Disposition':downloadDisposition(j.filename)});
           res.once('finish',()=>{j.transferCount=(j.transferCount||0)+1;j.downloadedAt=Date.now();});
           const stream=fs.createReadStream(j.file);stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;
         }

@@ -1,5 +1,21 @@
 # Supabase de vydo: estado 3.3
 
+## Revisión final: motivo de «Crear cuenta» deshabilitado
+
+La comprobación de solo lectura del 17 de noviembre de 2026 confirmó Auth accesible, Email habilitado, registros permitidos en Supabase (`disable_signup=false`), verificación obligatoria y `AUTH_PUBLIC_SIGNUP_ENABLED` ausente/false en el servidor local. Ese último interruptor es la causa inmediata: `auth.mjs` publica `signup=false` y `account.js` deshabilita el botón con «Registro público pendiente». No es un fallo del formulario ni falta la URL/clave publicable.
+
+El código ya envía registro y recuperación mediante Supabase Auth. SMTP se configura **en Supabase**, no mediante nuevas variables SMTP del servidor Node. No se han cambiado proveedores ni enviado correos en esta revisión. El endpoint público no acredita entrega SMTP a destinatarios externos; la configuración SMTP administrativa y esa entrega quedan pendientes de verificar por el propietario.
+
+Pasos para habilitarlo, en este orden:
+
+1. Elegir un proveedor de correo y verificar el remitente/dominio; introducir sus valores reales Host, Port, Username, Password, Sender email y Sender name en el SMTP personalizado de Supabase. No se contrata ni configura en esta entrega.
+2. Mantener Email/Password y Confirm email habilitados, y permitir registros nuevos en Supabase. El código comprueba también que `disable_signup` del proveedor sea false.
+3. Al preparar producción, configurar Site URL `https://vydo.download` y Redirect URLs exactas `https://vydo.download/` y `https://vydo.download/auth/callback`. No cambiar todavía los valores locales usados por la web de desarrollo.
+4. Tras configurar SMTP, poner `AUTH_PUBLIC_SIGNUP_ENABLED=true` en el entorno del servidor y reiniciarlo. Ejecutar `node --env-file=.env.production scripts/check-auth.mjs`; debe mostrar `publicSignupEnabled: true` sin revelar claves.
+5. Antes de abrir al público, probar con destinatarios externos autorizados: alta, confirmación en el mismo navegador, sesión y recuperación. Si falla correo, mantener el interruptor false y corregir el proveedor. La prueba previa con la cuenta del propietario no sustituye esta validación.
+
+El [servicio de correo por defecto](https://supabase.com/docs/guides/auth/auth-smtp) sigue sin ser una solución para altas públicas. Google y la clave administrativa para eliminar cuentas son configuraciones separadas y no son requisitos para habilitar el registro por correo.
+
 Se creó el proyecto dedicado `vydo` en la organización **BRAINSTORMVAULT**, referencia `rxtahpernilkidmgvqhb`, región `us-east-1`, plan gratuito. El coste consultado antes de crearlo fue **0 USD/mes**; no se contrató SMTP, hosting ni un plan de pago. Los proyectos de otras aplicaciones no se modificaron.
 
 URL API: `https://rxtahpernilkidmgvqhb.supabase.co`. La URL y clave publicable reales están únicamente en el `.env` local ignorado por Git. No se incluyen credenciales de usuario, claves ni enlaces de verificación en el repositorio. La evidencia real no contiene datos personales.
