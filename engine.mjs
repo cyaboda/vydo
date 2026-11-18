@@ -40,7 +40,7 @@ export function run(binary, args, {signal, timeout=120000, maxOutput=8*1024*1024
   return new Promise((resolve,reject) => {
     if (signal?.aborted) return reject(Error('Trabajo cancelado.'));
     const child = spawn(binary,args,{windowsHide:true,detached:process.platform !== 'win32',stdio:['ignore','pipe','pipe']});
-    let output='', pending='', failure, stderr='';
+    let output='', pending='', failure, stderr='',limited=false;
     const stop = message => { failure ||= Object.assign(Error(message),{internal:!signal?.aborted}); killTree(child); };
     const abort = () => stop('Trabajo cancelado.');
     signal?.addEventListener('abort',abort,{once:true});
@@ -50,10 +50,14 @@ export function run(binary, args, {signal, timeout=120000, maxOutput=8*1024*1024
       if (Buffer.byteLength(output) > maxOutput) { stop('La herramienta excedió el límite de salida.'); output=''; pending=''; return; }
       const lines = pending.split(/\r?\n/); pending=lines.pop(); lines.forEach(onLine);
     });
-    child.stderr.on('data',d => { stderr=(stderr+d.toString()).slice(-4000); });
+    child.stderr.on('data',d => {
+      stderr=(stderr+d.toString()).slice(-4000);
+      if(!limited&&!failure&&tool==='yt-dlp'&&/\bHTTP(?:\s+Error|\/[\d.]+)?[: ]+429\b/i.test(stderr)){limited=true;killTree(child);}
+    });
     child.on('error',e => { failure=e; });
     child.on('close',code => {
       clearTimeout(timer); signal?.removeEventListener('abort',abort);
+      if(limited&&!failure&&!signal?.aborted){const error=toolFailure(stderr,{tool,stage,version,exitCode:code});error.diagnostic.stoppedEarly=true;try{onDiagnostic(error.diagnostic);}catch{}return reject(error);}
       if (failure) {
         if(!signal?.aborted){
           const safe=toolFailure('',{tool,stage,version,exitCode:code});
@@ -69,7 +73,7 @@ export function run(binary, args, {signal, timeout=120000, maxOutput=8*1024*1024
   });
 }
 
-export function createEngine({ytDlp=process.env.YTDLP_BIN||'yt-dlp', ffmpeg=process.env.FFMPEG_BIN||'ffmpeg', maxDuration=1800, maxBytes=512*1024*1024, timeout=600000, execute=run}={}) {
+export function createEngine({ytDlp=process.env.YTDLP_BIN||'yt-dlp', ffmpeg=process.env.FFMPEG_BIN||'ffmpeg', maxDuration=1800, maxBytes=512*1024*1024, timeout=600000,inspectTimeout=45000, execute=run}={}) {
   let probes;
   const probe=()=>probes||=(function(){
     const y=spawnSync(ytDlp,['--version'],{timeout:10000,windowsHide:true,encoding:'utf8',maxBuffer:65536});
@@ -77,12 +81,12 @@ export function createEngine({ytDlp=process.env.YTDLP_BIN||'yt-dlp', ffmpeg=proc
     return {ytDlp:y.status===0,ffmpeg:f.status===0,versions:{ytDlp:y.stdout?.match(/^([\w.+-]{1,60})/)?.[1]||null,ffmpeg:f.stdout?.match(/^ffmpeg version ([\w.+-]{1,60})/)?.[1]||null,node:process.version}};
   })();
   const common = ['--ignore-config','--no-plugin-dirs','--no-cache-dir','--js-runtimes',`node:${process.execPath}`,
-    '--no-playlist','--socket-timeout','20','--retries','1','--fragment-retries','1','--ffmpeg-location',ffmpeg];
+    '--no-playlist','--ffmpeg-location',ffmpeg];
   return {
     health() {const tools=probe();return {ytDlp:tools.ytDlp,ffmpeg:tools.ffmpeg};},
     versions(){return {...probe().versions};},
     async inspect(url, signal) {
-      const raw=await execute(ytDlp,[...common,'--skip-download','--dump-single-json','--',url],{signal,tool:'yt-dlp',stage:'inspect',version:probes?.versions.ytDlp||null});
+      const raw=await execute(ytDlp,[...common,'--socket-timeout','10','--retries','0','--fragment-retries','0','--extractor-retries','0','--sleep-requests','1','--skip-download','--dump-single-json','--',url],{signal,timeout:inspectTimeout,tool:'yt-dlp',stage:'inspect',version:probes?.versions.ytDlp||null});
       let info;try{info=JSON.parse(raw);}catch{throw Object.assign(Error('El analizador devolvió una respuesta no válida.'),{internal:true});}
       return preview(info,maxDuration);
     },
@@ -102,7 +106,7 @@ export function createEngine({ytDlp=process.env.YTDLP_BIN||'yt-dlp', ffmpeg=proc
       },1000);
       try {
         onProgress({phase:'preparing',percent:null});
-        await execute(ytDlp,[...common,'--newline','--progress','--progress-delta','1','--progress-template','download:vydo:%(progress)j',
+        await execute(ytDlp,[...common,'--socket-timeout','20','--retries','1','--fragment-retries','1','--newline','--progress','--progress-delta','1','--progress-template','download:vydo:%(progress)j',
           '--max-filesize',String(maxBytes),'--match-filter',`!is_live & duration <= ${maxDuration}`,
           '-f',selection,'--merge-output-format','mkv','-o',source,'--',job.url],
           {signal:controller.signal,timeout,tool:'yt-dlp',stage:'download',version:probes?.versions.ytDlp||null,onLine:line=>{const p=downloadProgress(line);if(p)onProgress(p);}});

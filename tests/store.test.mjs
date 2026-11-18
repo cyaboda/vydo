@@ -75,3 +75,12 @@ test('initial profile name is stored safely and never overwrites existing prefer
  await store.updateProfile('name-user',{name:'Edited',format:'flac',quality:'1080'});const profile=await store.profile('name-user','Different metadata');
  assert.equal(profile.name,'Edited');assert.equal(profile.format,'flac');assert.equal(profile.quality,'1080');
 });
+
+test('YouTube pause survives restart, respects origin delay and analysis leases expire safely',async t=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),'vydo-analysis-state-'));let now=10000000;const file=path.join(dir,'state.sqlite');let store=new Store(await sqliteAdapter(file),{clock:()=>now});
+ t.after(async()=>{await store.close();await rm(dir,{recursive:true,force:true});});
+ assert.equal((await store.pauseAnalyses(7200)).retryAfter,7200);await store.close();store=new Store(await sqliteAdapter(file),{clock:()=>now});
+ assert.equal((await store.claimAnalysis()).retryAfter,7200);now+=7201000;const first=await store.claimAnalysis();assert(first.token);assert.equal((await store.claimAnalysis()).busy,true);
+ now+=76000;const next=await store.claimAnalysis();assert(next.token);await store.releaseAnalysis(first.token);assert.equal((await store.claimAnalysis()).busy,true);
+ await store.releaseAnalysis(next.token);await store.resetAnalysisBackoff();assert.equal((await store.pauseAnalyses()).retryAfter,1800);
+});

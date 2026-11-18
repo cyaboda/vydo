@@ -100,6 +100,33 @@ export class Store {
     if(rows.length>=limit)throw new LimitError('Demasiadas solicitudes. Espera antes de volver a intentarlo.',Math.ceil(window/1000));
     await q('INSERT INTO vydo_rates(id,rate_key,created_ms) VALUES(?,?,?)',[randomBytes(12).toString('hex'),key,now]);
   },true);}
+  // Reserved control rows in the existing rate store; no schema/config changes.
+  // created_ms holds a deadline for these two IDs, never a user's rate event.
+  async claimAnalysis(leaseMs=75000) {return this.db.tx(async q=>{
+    const now=this.clock();
+    const pause=(await q('SELECT created_ms FROM vydo_rates WHERE id=?',['__youtube_analysis_pause']))[0];
+    if(Number(pause?.created_ms)>now)return {paused:true,retryAfter:Math.ceil((Number(pause.created_ms)-now)/1000)};
+    const lease=(await q('SELECT created_ms FROM vydo_rates WHERE id=?',['__youtube_analysis_lease']))[0];
+    if(Number(lease?.created_ms)>now)return {busy:true,retryAfter:2};
+    const token=randomBytes(16).toString('hex');
+    await q('INSERT INTO vydo_rates(id,rate_key,created_ms) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET rate_key=excluded.rate_key,created_ms=excluded.created_ms',
+      ['__youtube_analysis_lease',token,now+leaseMs]);
+    return {token};
+  },true);}
+  async releaseAnalysis(token) {await this.db.tx(q=>q('DELETE FROM vydo_rates WHERE id=? AND rate_key=?',['__youtube_analysis_lease',token]),true);}
+  async pauseAnalyses(retryAfter) {return this.db.tx(async q=>{
+    const now=this.clock(),id='__youtube_analysis_pause';
+    const previous=(await q('SELECT rate_key,created_ms FROM vydo_rates WHERE id=?',[id]))[0];
+    const oldCount=Number(previous?.created_ms)>now-24*HOUR?Number(previous?.rate_key.split(':').at(-1))||0:0;
+    const count=Math.min(5,oldCount+1),fallback=Math.min(6*3600,1800*2**(count-1));
+    const supplied=Number.isSafeInteger(retryAfter)&&retryAfter>=0&&Number.isSafeInteger(now+retryAfter*1000);
+    const delay=supplied?Math.max(1,retryAfter):fallback;
+    const until=Math.max(Number(previous?.created_ms)||0,now+delay*1000);
+    await q('INSERT INTO vydo_rates(id,rate_key,created_ms) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET rate_key=excluded.rate_key,created_ms=excluded.created_ms',
+      [id,'youtube:429:'+count,until]);
+    return {retryAfter:Math.ceil((until-now)/1000),until,source:supplied?'upstream':'fallback'};
+  },true);}
+  async resetAnalysisBackoff() {await this.db.tx(q=>q('DELETE FROM vydo_rates WHERE id=? AND created_ms<=?',['__youtube_analysis_pause',this.clock()]),true);}
   async session(id) {return this.db.tx(async q=>(await q('SELECT * FROM vydo_sessions WHERE id=? AND expires_ms>?',[id,this.clock()]))[0]||null);}
   async saveSession(id,payload,userId,expires,expectedVersion) {return this.db.tx(async q=>{
     const rows=await q('INSERT INTO vydo_sessions AS current_session(id,payload,user_id,expires_ms,version) VALUES(?,?,?,?,0) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,user_id=excluded.user_id,expires_ms=excluded.expires_ms,version=current_session.version+1 WHERE ?=1 OR current_session.version=? RETURNING version',[id,payload,userId||null,expires,expectedVersion===undefined?1:0,expectedVersion??0]);
