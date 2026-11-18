@@ -13,11 +13,15 @@
     const generation=captchaGeneration,config=session?.auth.turnstile;
     if(!config?.enabled){$('account-message').textContent='La verificación del registro aún no está configurada.';return;}
     try{
-      if(!window.turnstile){
+      if(!window.turnstile?.render){
         if(!captchaLoading)captchaLoading=new Promise((resolve,reject)=>{
-          const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';script.async=true;
-          script.onload=()=>window.turnstile?.ready?window.turnstile.ready(resolve):reject(Error());
-          script.onerror=()=>{script.remove();reject(Error());};document.head.append(script);
+          const script=document.createElement('script');let timer;
+          const ready=()=>{clearTimeout(timer);resolve();};
+          const failed=()=>{clearTimeout(timer);script.remove();reject(Error());};
+          window.vydoTurnstileReady=ready;
+          script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?onload=vydoTurnstileReady&render=explicit';script.async=true;
+          script.onload=()=>{if(window.turnstile?.render)ready();};
+          script.onerror=failed;timer=setTimeout(failed,15000);document.head.append(script);
         }).catch(error=>{captchaLoading=null;throw error;});
         await captchaLoading;
       }

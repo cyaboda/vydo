@@ -49,7 +49,8 @@ try {
   page.on('response', response => {
     if (response.status() >= 400 && ['script', 'stylesheet', 'image'].includes(response.request().resourceType())) errors.push(`Asset failed: ${response.url()}`);
   });
-  await page.route('https://challenges.cloudflare.com/turnstile/**',route=>route.fulfill({contentType:'application/javascript',body: "window.turnstile={ready:fn=>fn(),render:(el,opts)=>{el.dataset.testVerified='true';el.textContent='Verificación de prueba';opts.callback('isolated-ui-token');return 'fixture';},remove:()=>{}};"}));
+  // A late-loaded SDK must not depend on a DOM-ready callback firing again.
+  await page.route('https://challenges.cloudflare.com/turnstile/**',route=>route.fulfill({contentType:'application/javascript',body: "window.turnstile={ready:()=>{},render:(el,opts)=>{el.dataset.testVerified='true';el.textContent='Verificación de prueba';opts.callback('isolated-ui-token');return 'fixture';},remove:()=>{}};"}));
   await page.goto(base);
   await page.locator('#quota-info').filter({hasText:'5 de 5'}).waitFor();
   assert.equal(await page.locator('#gate').count(),0); await page.locator('#subtitle').click();

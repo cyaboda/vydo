@@ -27,7 +27,9 @@ Los fallos nuevos producen registros estructurados `media_tool_failure`: herrami
 
 Los fallos internos conservan el mecanismo existente de devolución de cupo. Los rechazos del origen no se etiquetan como errores internos ni se devuelven por confundir códigos de diagnóstico con códigos del sistema operativo. Un fallo de análisis nunca reserva una descarga.
 
-La prueba final desde Render y su categoría observada se registran en la entrega/PR. Un arranque saludable, una vista previa o pruebas sintéticas no acreditan que YouTube permita una descarga. Solo se puede declarar resuelto después de recuperar y decodificar un archivo real desde producción. Si YouTube exige autenticación/verificación o bloquea su red, se documenta ese límite sin intentar evadirlo.
+Prueba real desde `https://vydo.download`, 18-11-2026: el video autorizado falló durante `inspect` con **HTTP 429** de YouTube. El registro seguro fue `YOUTUBE_RATE_LIMIT`, `upstreamStatus:429`, `exitCode:1`, yt-dlp `2026.10.26`. Render confirmó también FFmpeg `5.1.9-0+deb12u1` y Node `v24.11.0`. El análisis falló antes de crear un trabajo: no se reservó descarga ni se obtuvo un archivo real. Se distinguió así la limitación del origen del cupo de VYDO, de un 403, de autenticación y de un fallo interno.
+
+No se declara resuelta la descarga de YouTube. Un 429 acredita limitación de peticiones para esa conexión, pero no permite afirmar por sí solo que exista un bloqueo permanente de todas las IP de Render. Será necesario repetir una prueba autorizada cuando el origen admita peticiones; no se configuran proxies, cookies, cuentas ni otros mecanismos de evasión. Un health check 200 o pruebas sintéticas no sustituyen recuperar y decodificar un archivo real desde producción.
 
 ## Registro opcional
 
@@ -48,6 +50,8 @@ CSP permite únicamente el origen oficial `https://challenges.cloudflare.com` pa
 
 ## Pruebas
 
-Se cubren análisis sin declaración, cuotas/aislamiento, clasificación de errores y no filtración de stderr, verificación HTTP de Turnstile (respuesta exitosa y rechazos), nombre/confirmación del lado servidor, persistencia de nombre sin sobreescritura, SDK Supabase y navegador (formulario, contraseñas, temas, móvil, flujo directo, formatos). Las pruebas automatizadas de navegador interceptan Cloudflare con un fixture solo en el entorno aislado; no afirman haber superado un challenge real. En producción debe comprobarse el widget real y una solicitud inválida debe fallar antes de enviar correo; la confirmación positiva de un nuevo registro requiere una interacción autorizada con el widget.
+Se cubren análisis sin declaración, cuotas/aislamiento, clasificación de errores y no filtración de stderr, verificación HTTP de Turnstile (respuesta exitosa y rechazos), nombre/confirmación del lado servidor, persistencia de nombre sin sobreescritura, SDK Supabase y navegador (formulario, contraseñas, temas, móvil, flujo directo, formatos). CI: **47/47 pruebas aprobadas**, más navegador y Docker. Las pruebas automatizadas de navegador interceptan Cloudflare con un fixture solo en el entorno aislado; no afirman haber superado un challenge real.
+
+En producción se comprobó Siteverify con un token inválido: HTTP 400, «La verificación de seguridad no es válida», antes de invocar el registro/enviar correo. La primera carga real del SDK reveló que su callback DOM-ready no resolvía en carga tardía; se cambió a su callback explícito `onload`, con fallback de evento load y timeout de 15 segundos. La regresión de navegador usa un SDK fixture cuyo callback ready nunca se ejecuta. La creación positiva de una cuenta nueva y la recepción del correo no se deducen de un test de rechazo ni de ese fixture.
 
 Fuentes: [Cloudflare Siteverify](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/), [renderizado explícito](https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/), [yt-dlp releases](https://github.com/yt-dlp/yt-dlp/releases), [Supabase Auth](https://supabase.com/docs/guides/auth).
