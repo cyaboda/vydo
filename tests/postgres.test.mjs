@@ -12,4 +12,8 @@ test('real PostgreSQL adapter coordinates concurrent workers with an atomic glob
  assert.equal(attempts.filter(r=>r.status==='fulfilled').length,1);
  const row=await pool.query("SELECT id FROM private.vydo_usage WHERE state='active'");assert.equal(row.rows.length,1);
  await a.finish(row.rows[0].id,'done');assert.equal((await b.quota('ip:shared',false)).remaining,4);
+ const leases=await Promise.all([a.claimAnalysis(),b.claimAnalysis()]);
+ assert.equal(leases.filter(v=>v.token).length,1);assert.equal(leases.filter(v=>v.busy).length,1);
+ await a.pauseAnalyses(3600);const paused=await b.claimAnalysis();assert.equal(paused.paused,true);assert(paused.retryAfter>3500&&paused.retryAfter<=3600);
+ await a.releaseAnalysis(leases.find(v=>v.token).token);
 });

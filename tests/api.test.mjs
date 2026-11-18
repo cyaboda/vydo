@@ -1,3 +1,4 @@
+import {toolFailure} from '../media-errors.mjs';
 import {createTurnstile} from '../turnstile.mjs';
 import {spawnSync} from 'node:child_process';
 import test from 'node:test';
@@ -136,4 +137,23 @@ test('missing Turnstile configuration disables signup clearly while downloads re
  const state=await (await call('/api/session')).json();assert.equal(state.auth.signup,false);assert.equal(state.quota.limit,5);
  const result=await call('/api/auth/signup',{method:'POST',data:{name:'Álex',email:'a@example.test',password:'test-password',confirmPassword:'test-password',captchaToken:'token'}});
  assert.equal(result.status,503);await analyze();
+});
+
+test('confirmed 429 suspends only analysis, provides Retry-After and consumes no visitor or account quota',async t=>{
+ for(const registered of [false,true]){let calls=0;const engine={...fakeEngine(),inspect:async()=>{calls++;throw toolFailure('HTTP Error 429',{tool:'yt-dlp'});}};
+ const {app,call}=await setup(t,{auth:fakeAuth(),engine});const now=Date.now();app.store.clock=()=>now;if(registered)await call('/api/auth/login',{method:'POST',data:{email:'alice@example.test',password:'test-password'}});
+ const before=(await (await call('/api/session')).json()).quota;
+ for(let n=0;n<2;n++){const response=await call('/api/preview',{method:'POST',data:{url:video}});assert.equal(response.status,503);assert.equal(response.headers.get('retry-after'),'1800');
+ const result=await response.json();assert.equal(result.retryAfter,1800);assert.match(result.error,/YouTube limita/);}
+ assert.equal(calls,1);const after=(await (await call('/api/session')).json()).quota;assert.equal(after.remaining,before.remaining);assert.equal(after.used,0);
+ assert.equal((await call('/api/health')).status,200);assert.equal((await call('/')).status,200);if(registered)assert.equal((await call('/api/profile')).status,200);
+ }
+});
+
+test('coalesced metadata never shares preview ownership between visitors',async t=>{
+ let calls=0;const {call,base,create}=await setup(t,{engine:{...fakeEngine(),inspect:async()=>{calls++;await new Promise(r=>setTimeout(r,25));return metadata;}}});
+ const other=client(base);await call('/api/session');await other('/api/session');
+ const responses=await Promise.all([call('/api/preview',{method:'POST',data:{url:video}}),other('/api/preview',{method:'POST',data:{url:video}})]);
+ const [a,b]=await Promise.all(responses.map(r=>r.json()));assert.equal(calls,1);assert.notEqual(a.preview.id,b.preview.id);assert.equal((await create(a.preview,{},other)).status,400);
+ await call('/api/preview',{method:'POST',data:{url:video}});assert.equal(calls,1);
 });

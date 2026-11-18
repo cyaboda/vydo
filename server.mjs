@@ -4,6 +4,7 @@ import {readFile,stat} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {parseYoutubeUrl,validateRequest,secureEqual,token,FORMATS,QUALITIES,downloadDisposition,signupName} from './lib.mjs';
 import {createTurnstile} from './turnstile.mjs';
+import {createAnalysis} from './analysis.mjs';
 import {createEngine} from './engine.mjs';
 import {Jobs,cleanStaleRoots} from './jobs.mjs';
 import {createStore} from './store.mjs';
@@ -26,7 +27,7 @@ function advertising(config){
   return {provider:String(config.provider).slice(0,80),image:image.href,target:target.href};
 }
 export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,ttl=1200000,origin=process.env.PUBLIC_ORIGIN,
-  secureCookies=process.env.COOKIE_SECURE==='true'||origin?.startsWith('https:'),inspectLimit=1,store:providedStore,key:providedKey,
+  secureCookies=process.env.COOKIE_SECURE==='true'||origin?.startsWith('https:'),store:providedStore,key:providedKey,
   auth:providedAuth,turnstile:providedTurnstile,storeOptions={},secretOptions={},trustedProxies=(process.env.TRUSTED_PROXY_CIDRS||'').split(',').filter(Boolean),
   adminToken=process.env.VYDO_ADMIN_TOKEN,adConfig={provider:process.env.AD_PROVIDER,image:process.env.AD_IMAGE_URL,target:process.env.AD_TARGET_URL}}={}) {
   const store=providedStore||await createStore(storeOptions);
@@ -36,8 +37,9 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
   const turnstile=providedTurnstile||createTurnstile({origin});
   const authConfig=()=>({...auth.config,signup:Boolean(auth.config.enabled&&auth.config.signup!==false&&turnstile.config.enabled),turnstile:turnstile.config});
   const ad=advertising(adConfig),worker=token();
-  const jobs=await new Jobs(engine,{concurrency,maxQueue,ttl,onFinish:async(j,status,internal)=>store.finish(j.id,status,internal)}).init();
-  const tools=engine.health(),previews=new Map(),inspectors=new Set();let inspecting=0;
+  const analysis=createAnalysis({engine,store});
+  const jobs=await new Jobs({process:(...args)=>analysis.process(...args)},{concurrency,maxQueue,ttl,onFinish:async(j,status,internal)=>store.finish(j.id,status,internal)}).init();
+  const tools=engine.health(),previews=new Map(),inspectors=new Set();
   if(engine.versions)console.info(JSON.stringify({event:'media_versions',...engine.versions()}));
   const security={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
     'Content-Security-Policy':`default-src 'self'; script-src 'self'${turnstile.config.enabled?' https://challenges.cloudflare.com':''}; style-src 'self'; img-src 'self' https://i.ytimg.com https://i9.ytimg.com${ad?' '+new URL(ad.image).origin:''}; connect-src 'self'${turnstile.config.enabled?' https://challenges.cloudflare.com':''}; frame-src ${turnstile.config.enabled?'https://challenges.cloudflare.com':"'none'"}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`};
@@ -131,16 +133,15 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
       if(route==='/api/preview'&&req.method==='POST'){
         if(!tools.ytDlp||!tools.ffmpeg)throw bad('Faltan yt-dlp o FFmpeg en el servidor.',503);
         await store.rate('preview:'+owner,12);await store.rate('preview-ip:'+ipHash,30);
-        if(inspecting>=inspectLimit)throw bad('El analizador está ocupado.',429);
         const data=await body(req);
-        const normalized=input(()=>parseYoutubeUrl(data.url));inspecting++;
+        const normalized=input(()=>parseYoutubeUrl(data.url));
         const controller=new AbortController();inspectors.add(controller);const disconnect=()=>controller.abort();res.once('close',disconnect);
         try{
-          const p=await engine.inspect(normalized,controller.signal);const id=token();
+          const p=await analysis.inspect(normalized,controller.signal);const id=token();
           if(previews.size>=128)previews.delete(previews.keys().next().value);
           previews.set(id,{...p,url:normalized,owner,until:Date.now()+600000});return json(res,200,{preview:{...p,id}});
-        }catch(e){throw Object.assign(bad(e.code==='ENOENT'?'No se pudo iniciar la herramienta de descarga.':e.message,e.internal?503:422),{diagnostic:e.diagnostic});}
-        finally{inspecting--;inspectors.delete(controller);res.removeListener('close',disconnect);}
+        }catch(e){throw Object.assign(bad(e.code==='ENOENT'?'No se pudo iniciar la herramienta de descarga.':e.message,e.status||(e.internal?503:422)),{diagnostic:e.diagnostic,retryAfter:e.retryAfter});}
+        finally{inspectors.delete(controller);res.removeListener('close',disconnect);}
       }
       if(route==='/api/jobs'&&req.method==='POST'){
         const data=await body(req),validated=input(()=>validateRequest(data)),p=previews.get(data.previewId);
@@ -183,7 +184,7 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
     if(maintaining)return;maintaining=true;
     try{await jobs.cleanup();await store.maintenance();for(const [id,p]of previews)if(p.until<Date.now())previews.delete(id);}catch{console.error('No se pudo completar la limpieza periódica.');}finally{maintaining=false;}
   },30000);timer.unref();
-  return {server,jobs,store,auth,async close(){clearInterval(timer);clearInterval(heartbeat);for(const c of inspectors)c.abort();server.closeAllConnections();await new Promise(r=>server.close(r));await jobs.close();if(!providedStore)await store.close();}};
+  return {server,jobs,store,auth,async close(){clearInterval(timer);clearInterval(heartbeat);for(const c of inspectors)c.abort();server.closeAllConnections();await new Promise(r=>server.close(r));await analysis.close();await jobs.close();if(!providedStore)await store.close();}};
 }
 if(process.argv[1]===fileURLToPath(import.meta.url)){
   if(process.env.REQUIRE_POSTGRES==='true'&&!process.env.DATABASE_URL)throw Error('Configura DATABASE_URL: este despliegue exige PostgreSQL persistente.');
