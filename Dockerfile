@@ -9,7 +9,7 @@ ENV PATH="/opt/yt-dlp/bin:${PATH}"
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
-COPY --chown=node:node lib.mjs engine.mjs jobs.mjs server.mjs store.mjs auth.mjs security.mjs ./
+COPY --chown=node:node lib.mjs engine.mjs media-errors.mjs turnstile.mjs jobs.mjs server.mjs store.mjs auth.mjs security.mjs ./
 COPY --chown=node:node migrations/ ./migrations/
 COPY --chown=node:node certs/ ./certs/
 COPY --chown=node:node public/ ./public/

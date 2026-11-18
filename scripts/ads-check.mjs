@@ -36,7 +36,7 @@ async function scenario({configured=true,cosmetic=false,network=false,control=tr
   await page.setViewportSize({width:1366,height:768});await page.locator('[name=mode][value=mp4]').check();
   assert.equal(await page.locator('#advertisement').isVisible(),configured);
   async function prepare(){
-   await page.locator('#url').fill('https://youtu.be/LY43o01dkU4');await page.locator('#analyze').click();await page.locator('#permission').check();await page.locator('#consent-form .primary').click();await page.locator('#preview').waitFor();await page.locator('#start').click();await page.locator('#finished').waitFor();
+   await page.locator('#url').fill('https://youtu.be/LY43o01dkU4');await page.locator('#analyze').click();await page.locator('#preview').waitFor();await page.locator('#start').click();await page.locator('#finished').waitFor();
   }
   async function download(){const waiting=page.waitForEvent('download');await page.locator('#download').click();const file=await waiting;assert.equal(await file.failure(),null);}
   await test({page,counts,prepare,download});

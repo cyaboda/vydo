@@ -43,7 +43,7 @@ async function setup(t){
 }
 test('real Supabase SDK uses server validation, HttpOnly opaque session, encryption and logout',async t=>{
  const {auth,store,key,requests,revoke}=await setup(t);const res=response();
- await auth.action('login',{headers:{}},res,{email:verified.email,password:'test-password'});
+ await auth.action('login',{headers:{}},res,{email:verified.email,password:'test-password',name:'Álex Mendoza'});
  const raw=JSON.stringify(res.headers);assert.match(raw,/HttpOnly/);assert(!raw.includes(access));assert(!raw.includes('refresh'));
  const req={headers:{cookie:cookies(res)}};let user=await auth.resolve(req,response());assert.equal(user.id,id);assert.equal(user.downloads,undefined);
  assert(requests.some(r=>r.url==='/auth/v1/user'&&r.authorization==='Bearer '+access));
@@ -56,7 +56,7 @@ test('real Supabase SDK uses server validation, HttpOnly opaque session, encrypt
  await auth.logout(user,req,response());assert.equal(await auth.resolve(req,response()),null);
 });
 test('unverified email cannot receive authenticated identity',async t=>{
- const {auth,unverify}=await setup(t);unverify();await assert.rejects(auth.action('login',{headers:{}},response(),{email:verified.email,password:'test-password'}),/Verifica/);
+ const {auth,unverify}=await setup(t);unverify();await assert.rejects(auth.action('login',{headers:{}},response(),{email:verified.email,password:'test-password',name:'Álex Mendoza'}),/Verifica/);
 });
 test('Google and email PKCE verification, missing-verifier rejection and recovery are prepared with real SDK',async t=>{
  const {auth,url,requests}=await setup(t);const res=response();
@@ -64,14 +64,14 @@ test('Google and email PKCE verification, missing-verifier rejection and recover
  const req={headers:{cookie:cookies(res)}};
  await assert.rejects(auth.callback({headers:{}},response(),'authorized-code'),/mismo navegador/);
  assert.equal(await auth.callback(req,response(),'authorized-code'),'/');assert(requests.some(r=>r.url.includes('grant_type=pkce')&&r.body.code_verifier));
- const signup=response();await auth.action('signup',{headers:{}},signup,{email:verified.email,password:'test-password'});
- assert(requests.some(r=>r.url.startsWith('/auth/v1/signup')&&r.body.code_challenge));
+ const signup=response();await auth.action('signup',{headers:{}},signup,{email:verified.email,password:'test-password',name:'Álex Mendoza'});
+ assert(requests.some(r=>r.url.startsWith('/auth/v1/signup')&&r.body.code_challenge&&r.body.data.name==='Álex Mendoza'));
  const recovery=response();await auth.action('recover',{headers:{}},recovery,{email:verified.email});
  assert(requests.some(r=>r.url.startsWith('/auth/v1/recover')&&r.body.code_challenge));
  assert.equal(await auth.callback({headers:{cookie:cookies(recovery)}},response(),'authorized-code',true),'/?account=recovery');
 });
 test('account deletion revokes sessions first, uses server-only admin key and erases metadata',async t=>{
- const {auth,store,requests}=await setup(t);const res=response();await auth.action('login',{headers:{}},res,{email:verified.email,password:'test-password'});
+ const {auth,store,requests}=await setup(t);const res=response();await auth.action('login',{headers:{}},res,{email:verified.email,password:'test-password',name:'Álex Mendoza'});
  const req={headers:{cookie:cookies(res)}},user=await auth.resolve(req,response());await store.profile(user.id);
  await auth.deleteAccount(user);
  assert.equal((await store.db.tx(q=>q('SELECT * FROM vydo_profiles'))).length,0);
@@ -84,10 +84,10 @@ test('account deletion revokes sessions first, uses server-only admin key and er
 test('Auth readiness uses real provider flags and defaults public signup to disabled',async t=>{
  const {auth,store,key,url}=await setup(t);await auth.initialize();assert.equal(auth.config.enabled,true);assert.equal(auth.config.google,false);assert.equal(auth.config.signup,true);
  const disabled=createAuth({store,key,origin:'http://localhost:3000',url,publishableKey:'test-key'});await disabled.initialize();assert.equal(disabled.config.enabled,true);assert.equal(disabled.config.signup,false);
- await assert.rejects(disabled.action('signup',{headers:{}},response(),{email:verified.email,password:'test-password'}),/registro público/i);
+ await assert.rejects(disabled.action('signup',{headers:{}},response(),{email:verified.email,password:'test-password',name:'Álex Mendoza'}),/registro público/i);
  const missing=createAuth({store,key,url,publishableKey:'test-key'});assert.equal(missing.config.enabled,false);assert.equal(await missing.resolve({headers:{}},response()),null);
 });
 test('mail delivery failures are reported instead of claiming a verification email was sent',async t=>{
  const {auth,failMail}=await setup(t);failMail();
- for(const action of ['signup','recover'])await assert.rejects(auth.action(action,{headers:{}},response(),{email:verified.email,password:'test-password'}),e=>e.status===429);
+ for(const action of ['signup','recover'])await assert.rejects(auth.action(action,{headers:{}},response(),{email:verified.email,password:'test-password',name:'Álex Mendoza'}),e=>e.status===429);
 });

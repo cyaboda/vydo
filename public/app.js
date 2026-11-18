@@ -28,7 +28,6 @@ function invalidate() {
   state.preview = null;
   $('preview').hidden = true;
   $('finished').hidden = true;
-  $('permission').checked = false;
 }
 function updateMode() {
   const video = selectedMode() === 'mp4';
@@ -64,11 +63,7 @@ $('analyze-form').addEventListener('submit', e => {
   e.preventDefault();
   if (state.busy) return;
   if (state.job) { poll(); return; }
-  if (!$('permission').checked) { $('consent-dialog').showModal(); return; }
   if (state.preview) startJob(); else analyze();
-});
-$('consent-form').addEventListener('submit', e => {
-  e.preventDefault(); $('consent-dialog').close(); analyze();
 });
 async function analyze() {
   if (state.busy) return;
@@ -77,7 +72,7 @@ async function analyze() {
   let startAudio = false;
   try {
     state.url = $('url').value.trim();
-    const {preview} = await api('/api/preview', 'POST', {url: state.url, authorized: $('permission').checked});
+    const {preview} = await api('/api/preview', 'POST', {url: state.url});
     state.preview = preview;
     if (!preview.formats.includes(selectedFormat())) throw Error('El formato seleccionado no está disponible para este video.');
     $('title').textContent = preview.title;
@@ -103,11 +98,10 @@ async function analyze() {
 $('download-form').addEventListener('submit', e => { e.preventDefault(); startJob(); });
 async function startJob() {
   if (state.busy || !state.preview) return;
-  if (!$('permission').checked) { $('consent-dialog').showModal(); return; }
   $('alert').hidden = true; $('finished').hidden = true; busy(true);
   try {
     const {job} = await api('/api/jobs', 'POST', {
-      url: state.url, previewId: state.preview.id, authorized: true,
+      url: state.url, previewId: state.preview.id,
       format: selectedFormat(), quality: $('quality').value || '720'
     });
     state.job = job.id; rememberJob(job.id);

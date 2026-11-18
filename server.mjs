@@ -2,7 +2,8 @@ import http from 'node:http';
 import fs from 'node:fs';
 import {readFile,stat} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {parseYoutubeUrl,validateRequest,secureEqual,token,FORMATS,QUALITIES,downloadDisposition} from './lib.mjs';
+import {parseYoutubeUrl,validateRequest,secureEqual,token,FORMATS,QUALITIES,downloadDisposition,signupName} from './lib.mjs';
+import {createTurnstile} from './turnstile.mjs';
 import {createEngine} from './engine.mjs';
 import {Jobs,cleanStaleRoots} from './jobs.mjs';
 import {createStore} from './store.mjs';
@@ -26,17 +27,20 @@ function advertising(config){
 }
 export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,ttl=1200000,origin=process.env.PUBLIC_ORIGIN,
   secureCookies=process.env.COOKIE_SECURE==='true'||origin?.startsWith('https:'),inspectLimit=1,store:providedStore,key:providedKey,
-  auth:providedAuth,storeOptions={},secretOptions={},trustedProxies=(process.env.TRUSTED_PROXY_CIDRS||'').split(',').filter(Boolean),
+  auth:providedAuth,turnstile:providedTurnstile,storeOptions={},secretOptions={},trustedProxies=(process.env.TRUSTED_PROXY_CIDRS||'').split(',').filter(Boolean),
   adminToken=process.env.VYDO_ADMIN_TOKEN,adConfig={provider:process.env.AD_PROVIDER,image:process.env.AD_IMAGE_URL,target:process.env.AD_TARGET_URL}}={}) {
   const store=providedStore||await createStore(storeOptions);
   const key=providedKey||await appSecret(secretOptions);
   const auth=providedAuth||createAuth({store,key,secure:secureCookies,origin});
   await auth.initialize?.();
+  const turnstile=providedTurnstile||createTurnstile({origin});
+  const authConfig=()=>({...auth.config,signup:Boolean(auth.config.enabled&&auth.config.signup!==false&&turnstile.config.enabled),turnstile:turnstile.config});
   const ad=advertising(adConfig),worker=token();
   const jobs=await new Jobs(engine,{concurrency,maxQueue,ttl,onFinish:async(j,status,internal)=>store.finish(j.id,status,internal)}).init();
   const tools=engine.health(),previews=new Map(),inspectors=new Set();let inspecting=0;
+  if(engine.versions)console.info(JSON.stringify({event:'media_versions',...engine.versions()}));
   const security={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
-    'Content-Security-Policy':`default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://i.ytimg.com https://i9.ytimg.com${ad?' '+new URL(ad.image).origin:''}; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`};
+    'Content-Security-Policy':`default-src 'self'; script-src 'self'${turnstile.config.enabled?' https://challenges.cloudflare.com':''}; style-src 'self'; img-src 'self' https://i.ytimg.com https://i9.ytimg.com${ad?' '+new URL(ad.image).origin:''}; connect-src 'self'${turnstile.config.enabled?' https://challenges.cloudflare.com':''}; frame-src ${turnstile.config.enabled?'https://challenges.cloudflare.com':"'none'"}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`};
   if(secureCookies)security['Strict-Transport-Security']='max-age=31536000';
   const server=http.createServer(async(req,res)=>{
     for(const [name,value] of Object.entries(security))res.setHeader(name,value);
@@ -82,13 +86,19 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
           data.email=data.email.trim().toLowerCase();await store.rate('email:'+action+':'+digest(key,data.email),10,3600000);
           if(['login','signup'].includes(action)&&(typeof data.password!=='string'||data.password.length<8||data.password.length>128))throw bad('La contraseña debe tener entre 8 y 128 caracteres.');
         }
+        if(action==='signup'){
+          if(auth.config.signup===false)throw bad('El registro público no está disponible temporalmente.',503);
+          data.name=input(()=>signupName(data.name));
+          if(typeof data.confirmPassword!=='string'||data.password!==data.confirmPassword)throw bad('Las contraseñas no coinciden.');
+          await turnstile.verify(data.captchaToken);
+        }
         return json(res,200,await auth.action(action,req,res,data));
       }
       const user=await auth.resolve(req,res),owner=user?'u:'+user.id:guestOwner;
       const owners=[owner,guestOwner],subject=user?owner:'ip:'+digest(key,'ip:'+ip);
       const quota=()=>store.quota(subject,Boolean(user));
-      if(route==='/api/session'&&req.method==='GET')return json(res,200,{user:user?{id:user.id,email:user.email}:null,quota:await quota(),auth:auth.config,
-        profile:user?await store.profile(user.id):null,ad});
+      if(route==='/api/session'&&req.method==='GET')return json(res,200,{user:user?{id:user.id,email:user.email}:null,quota:await quota(),auth:authConfig(),
+        profile:user?await store.profile(user.id,user.name):null,ad});
       if(route==='/api/session'&&req.method==='DELETE')return json(res,200,await auth.logout(user,req,res));
       if(route==='/api/auth/password'&&req.method==='POST'){
         if(!user)throw bad('Inicia sesión para cambiar la contraseña.',401);await store.rate('password:'+owner,5,3600000);
@@ -104,7 +114,7 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
         if(!user)throw bad('Inicia sesión para acceder a tu perfil.',401);
         if(req.method==='GET'){
           const history=await store.history(user.id);
-          return json(res,200,{profile:await store.profile(user.id),quota:await quota(),history:history.map(h=>{
+          return json(res,200,{profile:await store.profile(user.id,user.name),quota:await quota(),history:history.map(h=>{
             const j=jobs.get(h.id,owner);return {...h,available:Boolean(j?.status==='done'&&j.finishedAt+ttl>Date.now())};
           })});
         }
@@ -122,14 +132,14 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
         if(!tools.ytDlp||!tools.ffmpeg)throw bad('Faltan yt-dlp o FFmpeg en el servidor.',503);
         await store.rate('preview:'+owner,12);await store.rate('preview-ip:'+ipHash,30);
         if(inspecting>=inspectLimit)throw bad('El analizador está ocupado.',429);
-        const data=await body(req);if(data.authorized!==true)throw bad('Confirma tu autorización.');
+        const data=await body(req);
         const normalized=input(()=>parseYoutubeUrl(data.url));inspecting++;
         const controller=new AbortController();inspectors.add(controller);const disconnect=()=>controller.abort();res.once('close',disconnect);
         try{
           const p=await engine.inspect(normalized,controller.signal);const id=token();
           if(previews.size>=128)previews.delete(previews.keys().next().value);
           previews.set(id,{...p,url:normalized,owner,until:Date.now()+600000});return json(res,200,{preview:{...p,id}});
-        }catch(e){throw bad(e.code==='ENOENT'?'No se pudo iniciar la herramienta de descarga.':e.message,422);}
+        }catch(e){throw Object.assign(bad(e.code==='ENOENT'?'No se pudo iniciar la herramienta de descarga.':e.message,e.internal?503:422),{diagnostic:e.diagnostic});}
         finally{inspecting--;inspectors.delete(controller);res.removeListener('close',disconnect);}
       }
       if(route==='/api/jobs'&&req.method==='POST'){
@@ -158,7 +168,7 @@ export async function createApp({engine=createEngine(),concurrency=1,maxQueue=3,
       throw bad('Ruta inexistente.',404);
     }catch(e){
       if(e.retryAfter)res.setHeader('Retry-After',String(e.retryAfter));
-      if(!res.headersSent)json(res,e.status||503,{error:e.status?e.message:'El servidor no está disponible temporalmente. Inténtalo más tarde.',retryAfter:e.retryAfter||null});else res.destroy();
+      if(!res.headersSent)json(res,e.status||503,{error:e.status?e.message:'El servidor no está disponible temporalmente. Inténtalo más tarde.',retryAfter:e.retryAfter||null,code:e.diagnostic?.code});else res.destroy();
     }
   });
   server.requestTimeout=15000;server.headersTimeout=10000;

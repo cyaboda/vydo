@@ -107,8 +107,8 @@ export class Store {
     return Number(rows[0].version);
   });}
   async removeSession(id) {await this.db.tx(q=>q('DELETE FROM vydo_sessions WHERE id=?',[id]));}
-  async profile(userId) {return this.db.tx(async q=>{
-    await q("INSERT INTO vydo_profiles(user_id,name,format,quality) VALUES(?,'','mp3','720') ON CONFLICT(user_id) DO NOTHING",[userId]);
+  async profile(userId,name='') {return this.db.tx(async q=>{
+    await q("INSERT INTO vydo_profiles(user_id,name,format,quality) VALUES(?,?,'mp3','720') ON CONFLICT(user_id) DO NOTHING",[userId,name]);
     return (await q('SELECT name,format,quality FROM vydo_profiles WHERE user_id=?',[userId]))[0];
   });}
   async updateProfile(userId,{name,format,quality}) {

@@ -12,12 +12,13 @@ await mkdir(output, {recursive: true});
 const password = 'local-ui-test-token-at-least-24-characters';
 const submitted = [];
 let inspectCalls = 0;
+const signupRequests=[];
 const accountAuth={config:{enabled:true,google:false,canDelete:true},
  async resolve(req){return cookie(req,'test_user')==='alice'?{id:'alice',email:'alice@example.test',recent:Date.now()}:null;},
- async action(action,req,res){if(action==='login'){setCookie(res,'test_user','alice');return {ok:true};}return {message:'Revisa tu correo para continuar.'};},
+ async action(action,req,res,data){if(action==='signup')signupRequests.push(data);if(action==='login'){setCookie(res,'test_user','alice');return {ok:true};}return {message:'Revisa tu correo para continuar.'};},
  async logout(user,req,res){setCookie(res,'test_user','',{maxAge:0});return {ok:true};},async deleteAccount(){return {ok:true};}
 };
-const app = await createApp({storeOptions:{filename:':memory:'},key:randomBytes(32),auth:accountAuth, engine: {
+const app = await createApp({storeOptions:{filename:':memory:'},key:randomBytes(32),auth:accountAuth,turnstile:{config:{enabled:true,siteKey:'isolated-ui-fixture'},verify:async token=>assert.equal(token,'isolated-ui-token')}, engine: {
   health: () => ({ytDlp: true, ffmpeg: true}),
   inspect: async () => {
     inspectCalls++;
@@ -48,6 +49,7 @@ try {
   page.on('response', response => {
     if (response.status() >= 400 && ['script', 'stylesheet', 'image'].includes(response.request().resourceType())) errors.push(`Asset failed: ${response.url()}`);
   });
+  await page.route('https://challenges.cloudflare.com/turnstile/**',route=>route.fulfill({contentType:'application/javascript',body: "window.turnstile={ready:fn=>fn(),render:(el,opts)=>{el.dataset.testVerified='true';el.textContent='Verificación de prueba';opts.callback('isolated-ui-token');return 'fixture';},remove:()=>{}};"}));
   await page.goto(base);
   await page.locator('#quota-info').filter({hasText:'5 de 5'}).waitFor();
   assert.equal(await page.locator('#gate').count(),0); await page.locator('#subtitle').click();
@@ -79,10 +81,9 @@ try {
     assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight),false,`Unnecessary initial vertical scroll at ${width}px`);
     if ([390,768,1366,1920].includes(width)) await page.screenshot({path: path.join(output, `vydo-3.3-${width}-light.png`), fullPage: true});
   }
-  // No analysis may run until the user confirms authorization.
+  // Analysis starts directly, without an authorization dialog.
   await page.locator('#url').fill('https://youtu.be/LY43o01dkU4');
-  await page.locator('#analyze').click(); await page.locator('#consent-dialog').waitFor(); assert.equal(inspectCalls, 0);
-  await page.locator('#permission').check(); await page.locator('#consent-form button[type="submit"], #consent-form .primary').click();
+  await page.locator('#analyze').click(); assert.equal(await page.locator('#consent-dialog').count(),0);
   await page.locator('#preview').waitFor(); assert.deepEqual(await page.locator('#quality option').allTextContents(), ['720p', '360p']);
   await page.locator('#quality').selectOption('360'); await page.locator('#start').click();
   await page.locator('#progress-panel').waitFor();
@@ -94,13 +95,15 @@ try {
   // MP3 stays on the compact main selector and starts immediately after analysis.
   await page.locator('#url').fill('https://youtu.be/LY43o01dkU4');
   await page.locator('[name="mode"][value="audio"]').check(); await page.locator('#analyze').click();
-  await page.locator('#permission').check(); await page.locator('#consent-form .primary').click();
   await page.locator('#progress-panel').waitFor(); await page.locator('#finished').waitFor();
   pending = page.waitForEvent('download'); await page.locator('#download').click(); assert.match((await pending).suggestedFilename(), /\.mp3$/);
   // Optional signup does not block guest downloads; login adds a private profile.
-  await page.locator('#sign-up').click(); await page.locator('#account-email').fill('alice@example.test');
-  await page.locator('#account-password').fill('test-password'); await page.locator('#account-submit').click();
-  await page.locator('#account-message').filter({hasText:'correo'}).waitFor();
+  await page.locator('#sign-up').click(); await page.locator('#account-name').fill('Álex Mendoza');await page.locator('#account-email').fill('alice@example.test');
+  await page.locator('#account-password').fill('test-password');await page.locator('#account-confirm-password').fill('different-password');await page.locator('#account-submit').click();
+  await page.locator('#account-message').filter({hasText:'no coinciden'}).waitFor();assert.equal(signupRequests.length,0);
+  await page.locator('#toggle-password').click();assert.equal(await page.locator('#account-password').getAttribute('type'),'text');await page.locator('#toggle-password').click();
+  await page.locator('#account-confirm-password').fill('test-password');await page.locator('#account-captcha[data-test-verified=true]').waitFor();await page.locator('#account-submit').click();
+  await page.locator('#account-message').filter({hasText:'correo'}).waitFor();assert.equal(signupRequests[0].name,'Álex Mendoza');
   await page.locator('[data-close="account-dialog"]').click();
   await page.locator('#sign-in').click(); await page.locator('#account-email').fill('alice@example.test');
   await page.locator('#account-password').fill('test-password'); await page.locator('#account-submit').click();
@@ -124,11 +127,9 @@ try {
   await page.locator('[name="mode"][value="mp4"]').press('ArrowRight');
   assert.equal(await page.locator('[name="mode"][value="audio"]').isChecked(), true);
   await page.locator('#url').fill('https://example.test/video'); await page.locator('#analyze').click();
-  await page.locator('#permission').check(); await page.locator('#consent-form .primary').click();
   await page.locator('#alert').waitFor(); assert.match(await page.locator('#alert').textContent(), /YouTube/);
   await page.locator('#url').fill('https://youtu.be/LY43o01dkU4');
   await page.locator('[name="mode"][value="mp4"]').check(); await page.locator('#analyze').click();
-  await page.locator('#permission').check(); await page.locator('#consent-form .primary').click();
   await page.locator('#preview').waitFor(); await page.locator('#start').click();
   await page.locator('#cancel').click(); await page.locator('#alert').waitFor();
   assert.match(await page.locator('#alert').textContent(), /cancelado/i);
@@ -149,5 +150,5 @@ try {
   await systemPage.emulateMedia({colorScheme: 'light'}); await systemPage.waitForFunction(() => document.documentElement.dataset.theme === 'light');
   await systemContext.close();
   assert.deepEqual(errors, []);
-  console.log('UI PASS: original logos, both themes, persistence/system preference, consent, exact quality, job recovery, five formats, authenticated file downloads, 320–1920px layouts at 100% zoom; no browser errors.');
+  console.log('UI PASS: original logos, both themes, persistence/system preference, direct analysis, exact quality, job recovery, five formats, authenticated file downloads, 320–1920px layouts at 100% zoom; no browser errors.');
 } finally { await browser?.close(); await app.close(); }

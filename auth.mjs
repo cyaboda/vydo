@@ -1,6 +1,7 @@
 import {createClient} from '@supabase/supabase-js';
 import {randomBytes} from 'node:crypto';
 import {cookie,setCookie,digest,seal,unseal} from './security.mjs';
+import {signupName} from './lib.mjs';
 const fail=(message,status=400)=>Object.assign(Error(message),{status});
 
 export function createAuth({store,key,secure=false,origin,url=process.env.SUPABASE_URL,publishableKey=process.env.SUPABASE_PUBLISHABLE_KEY,
@@ -36,7 +37,8 @@ export function createAuth({store,key,secure=false,origin,url=process.env.SUPABA
     if(error){if(error.status>=500||!error.status)throw fail('El servicio de cuentas no está disponible. Inténtalo más tarde.',503);return null;}
     const user=data.user;
     if(!user?.id||!user.email_confirmed_at||user.is_anonymous)return null;
-    await ctx.identify(user.id);return {id:user.id,email:user.email};
+    let name='';try{name=signupName(user.user_metadata?.name);}catch{}
+    await ctx.identify(user.id);return {id:user.id,email:user.email,name};
   }
   return {config:publicConfig,
     async initialize(){
@@ -62,7 +64,10 @@ export function createAuth({store,key,secure=false,origin,url=process.env.SUPABA
         ctx.state.recent=Date.now();await ctx.rotate();return {ok:true};
       }
       if(action==='signup'){
-        const {error}=await ctx.client.auth.signUp({email:data.email,password:data.password,options:{emailRedirectTo:origin+'/'}});
+        const name=signupName(data.name);
+        const {error}=await ctx.client.auth.signUp({email:data.email,password:data.password,options:{emailRedirectTo:origin+'/',data:{name}}});
+        if(error?.code==='weak_password')throw fail('La contraseña no cumple los requisitos de seguridad. Usa una contraseña más larga y difícil de adivinar.');
+        if(error?.code==='email_address_invalid')throw fail('El proveedor no acepta este correo electrónico. Comprueba la dirección.');
         mailError(error);
         await ctx.persist();return {message:'Si el correo es válido, recibirás un enlace para verificar tu cuenta.'};
       }
