@@ -1,3 +1,4 @@
+import {createTurnstile} from '../turnstile.mjs';
 import {spawnSync} from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,8 +29,8 @@ export async function setup(t,options={}){
  const app=await createApp({engine:fakeEngine(),key:randomBytes(32),storeOptions:{filename:':memory:'},...options});
  await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));t.after(()=>app.close());
  const base='http://127.0.0.1:'+app.server.address().port,call=client(base);
- const analyze=async(c=call)=>{const response=await c('/api/preview',{method:'POST',data:{url:video,authorized:true}});assert.equal(response.status,200);return (await response.json()).preview;};
- const create=async(p,extra={},c=call)=>c('/api/jobs',{method:'POST',data:{url:video,authorized:true,previewId:p.id,format:'mp4',quality:'720',...extra}});
+ const analyze=async(c=call)=>{const response=await c('/api/preview',{method:'POST',data:{url:video}});assert.equal(response.status,200);return (await response.json()).preview;};
+ const create=async(p,extra={},c=call)=>c('/api/jobs',{method:'POST',data:{url:video,previewId:p.id,format:'mp4',quality:'720',...extra}});
  return {app,call,base,analyze,create};
 }
 export async function terminal(call,id){for(let n=0;n<150;n++){const {job}=await (await call('/api/jobs/'+id)).json();if(!['queued','processing'].includes(job.status))return job;await new Promise(r=>setTimeout(r,5));}throw Error('Timed out');}
@@ -44,7 +45,7 @@ test('public access has no password barrier; internals and admin remain protecte
  const html=await (await call('/')).text();assert(!html.includes('id="gate"'));assert(!html.includes('github.com'));
  for(const asset of ['/LOGO_BLACK.webp','/LOGO_WHITE.webp'])assert.equal((await call(asset)).headers.get('content-type'),'image/webp');
  assert.equal((await call('/theme.js')).status,200);
- assert.equal((await call('/api/preview',{method:'POST',data:{url:video,authorized:true},headers:{Origin:'https://evil.test'}})).status,403);
+ assert.equal((await call('/api/preview',{method:'POST',data:{url:video},headers:{Origin:'https://evil.test'}})).status,403);
 });
 test('separate anonymous browsers on one IP share quota but never job ownership',async t=>{
  const {call,base,analyze,create}=await setup(t);const p=await analyze();const {job}=await (await create(p)).json();
@@ -52,10 +53,10 @@ test('separate anonymous browsers on one IP share quota but never job ownership'
  assert.equal((await (await other('/api/session')).json()).quota.remaining,4);
  assert.equal((await create(p,{},other)).status,400);
 });
-test('preview validation, exact quality, consent, streaming and TTL preserved',async t=>{
+test('preview validation, exact quality, direct analysis, streaming and TTL preserved',async t=>{
  const title='Canción 日本語 (Official Video)';
  const {app,call,analyze,create}=await setup(t,{engine:{...fakeEngine(),inspect:async()=>({...metadata,title})}});const p=await analyze();
- assert.equal((await create(p,{authorized:false})).status,400);assert.equal((await create(p,{quality:'1080'})).status,400);
+ assert.equal((await create(p,{quality:'1080'})).status,400);
  assert.equal((await create(p,{url:'https://youtu.be/dQw4w9WgXcQ'})).status,400);
  const started=await create(p);assert.equal(started.status,202);const {job}=await started.json();
  assert.equal((await call('/api/jobs/'+job.id+'/download')).status,409);
@@ -116,4 +117,23 @@ test('unconfigured Auth stays optional; ads off by default and configured only b
 test('ephemeral cloud deployment refuses SQLite fallback when PostgreSQL is required',()=>{
  const result=spawnSync(process.execPath,['server.mjs'],{env:{...process.env,REQUIRE_POSTGRES:'true',DATABASE_URL:''},encoding:'utf8',windowsHide:true,timeout:10000});
  assert.equal(result.status,1);assert.match(result.stderr,/Configura DATABASE_URL/);
+});
+
+test('signup requires name, matching passwords and server-verified captcha before calling Auth',async t=>{
+ const auth=fakeAuth(),originalAction=auth.action;let signups=0,verified=0;
+ auth.action=async(action,req,res,data)=>{if(action==='signup'){signups++;assert.equal(data.name,'Álex Mendoza');}return originalAction(action,req,res,data);};
+ const gate=createTurnstile({origin:'https://vydo.download',siteKey:'real-shaped-fixture',secretKey:'private-test-secret',request:async()=>{verified++;return Response.json({success:true,hostname:'vydo.download',action:'signup'});}});
+ const {call}=await setup(t,{auth,turnstile:gate});
+ const data={name:'  Álex Mendoza  ',email:'alice@example.test',password:'strong-test-password',confirmPassword:'strong-test-password',captchaToken:'test-token'};
+ for(const change of [{name:' '},{confirmPassword:'different-password'},{captchaToken:''}]){
+  const result=await call('/api/auth/signup',{method:'POST',data:{...data,...change}});assert.equal(result.status,400);assert.equal(signups,0);
+ }
+ const ok=await call('/api/auth/signup',{method:'POST',data});assert.equal(ok.status,200);assert.equal(signups,1);assert.equal(verified,1);
+ const publicState=await (await call('/api/session')).json();assert.equal(publicState.auth.signup,true);assert(!JSON.stringify(publicState).includes('private-test-secret'));
+});
+test('missing Turnstile configuration disables signup clearly while downloads remain public',async t=>{
+ const {call,analyze}=await setup(t,{auth:fakeAuth()});
+ const state=await (await call('/api/session')).json();assert.equal(state.auth.signup,false);assert.equal(state.quota.limit,5);
+ const result=await call('/api/auth/signup',{method:'POST',data:{name:'Álex',email:'a@example.test',password:'test-password',confirmPassword:'test-password',captchaToken:'token'}});
+ assert.equal(result.status,503);await analyze();
 });

@@ -2,6 +2,7 @@ import {spawn, spawnSync} from 'node:child_process';
 import {readdir, stat} from 'node:fs/promises';
 import path from 'node:path';
 import {QUALITIES} from './lib.mjs';
+import {toolFailure} from './media-errors.mjs';
 
 export function preview(info, maxDuration) {
   if (info.is_live || info.is_upcoming || !Number.isFinite(info.duration) || info.duration <= 0 || info.duration > maxDuration)
@@ -35,7 +36,7 @@ function killTree(child) {
   else { try { process.kill(-child.pid,'SIGKILL'); } catch { child.kill('SIGKILL'); } }
 }
 
-export function run(binary, args, {signal, timeout=120000, maxOutput=8*1024*1024, onLine=()=>{}}={}) {
+export function run(binary, args, {signal, timeout=120000, maxOutput=8*1024*1024, onLine=()=>{},tool='process',stage='unknown',version=null,onDiagnostic=entry=>console.error(JSON.stringify(entry))}={}) {
   return new Promise((resolve,reject) => {
     if (signal?.aborted) return reject(Error('Trabajo cancelado.'));
     const child = spawn(binary,args,{windowsHide:true,detached:process.platform !== 'win32',stdio:['ignore','pipe','pipe']});
@@ -53,23 +54,37 @@ export function run(binary, args, {signal, timeout=120000, maxOutput=8*1024*1024
     child.on('error',e => { failure=e; });
     child.on('close',code => {
       clearTimeout(timer); signal?.removeEventListener('abort',abort);
-      if (failure) return reject(failure);
-      if (code !== 0) return reject(Error(/Sign in|bot|403|429|private|DRM|members|age.restricted/i.test(stderr)
-        ? 'YouTube restringió el acceso. No se intentará eludir la restricción.' : 'No se pudo procesar el video con las herramientas locales.'));
+      if (failure) {
+        if(!signal?.aborted){
+          const safe=toolFailure('',{tool,stage,version,exitCode:code});
+          safe.diagnostic.code=failure.code?'TOOL_START_FAILURE':/tiempo/.test(failure.message)?'TOOL_TIMEOUT':'TOOL_OUTPUT_LIMIT';
+          safe.message=failure.code?'No se pudo iniciar la herramienta multimedia en el servidor.':failure.message;
+          safe.internal=true;try{onDiagnostic(safe.diagnostic);}catch{}return reject(safe);
+        }
+        return reject(failure);
+      }
+      if (code !== 0) {const error=toolFailure(stderr,{tool,stage,version,exitCode:code});try{onDiagnostic(error.diagnostic);}catch{}return reject(error);}
       if(pending)onLine(pending); resolve(output);
     });
   });
 }
 
 export function createEngine({ytDlp=process.env.YTDLP_BIN||'yt-dlp', ffmpeg=process.env.FFMPEG_BIN||'ffmpeg', maxDuration=1800, maxBytes=512*1024*1024, timeout=600000, execute=run}={}) {
+  let probes;
+  const probe=()=>probes||=(function(){
+    const y=spawnSync(ytDlp,['--version'],{timeout:10000,windowsHide:true,encoding:'utf8',maxBuffer:65536});
+    const f=spawnSync(ffmpeg,['-version'],{timeout:10000,windowsHide:true,encoding:'utf8',maxBuffer:65536});
+    return {ytDlp:y.status===0,ffmpeg:f.status===0,versions:{ytDlp:y.stdout?.match(/^([\w.+-]{1,60})/)?.[1]||null,ffmpeg:f.stdout?.match(/^ffmpeg version ([\w.+-]{1,60})/)?.[1]||null,node:process.version}};
+  })();
   const common = ['--ignore-config','--no-plugin-dirs','--no-cache-dir','--js-runtimes',`node:${process.execPath}`,
     '--no-playlist','--socket-timeout','20','--retries','1','--fragment-retries','1','--ffmpeg-location',ffmpeg];
   return {
-    health() { const check=(bin,args)=>spawnSync(bin,args,{timeout:10000,windowsHide:true,stdio:'ignore'}).status===0;
-      return {ytDlp:check(ytDlp,['--version']),ffmpeg:check(ffmpeg,['-version'])}; },
+    health() {const tools=probe();return {ytDlp:tools.ytDlp,ffmpeg:tools.ffmpeg};},
+    versions(){return {...probe().versions};},
     async inspect(url, signal) {
-      const raw=await execute(ytDlp,[...common,'--skip-download','--dump-single-json','--',url],{signal});
-      return preview(JSON.parse(raw),maxDuration);
+      const raw=await execute(ytDlp,[...common,'--skip-download','--dump-single-json','--',url],{signal,tool:'yt-dlp',stage:'inspect',version:probes?.versions.ytDlp||null});
+      let info;try{info=JSON.parse(raw);}catch{throw Object.assign(Error('El analizador devolvió una respuesta no válida.'),{internal:true});}
+      return preview(info,maxDuration);
     },
     async process(job, dir, onProgress, signal) {
       const source=path.join(dir,'source.%(ext)s');
@@ -90,7 +105,7 @@ export function createEngine({ytDlp=process.env.YTDLP_BIN||'yt-dlp', ffmpeg=proc
         await execute(ytDlp,[...common,'--newline','--progress','--progress-delta','1','--progress-template','download:vydo:%(progress)j',
           '--max-filesize',String(maxBytes),'--match-filter',`!is_live & duration <= ${maxDuration}`,
           '-f',selection,'--merge-output-format','mkv','-o',source,'--',job.url],
-          {signal:controller.signal,timeout,onLine:line=>{const p=downloadProgress(line);if(p)onProgress(p);}});
+          {signal:controller.signal,timeout,tool:'yt-dlp',stage:'download',version:probes?.versions.ytDlp||null,onLine:line=>{const p=downloadProgress(line);if(p)onProgress(p);}});
         const files=(await readdir(dir)).filter(n=>/^source\.(mp4|mkv|webm|m4a|mp3|ogg|opus|flv|wav)$/.test(n));
         if(files.length!==1)throw Error('No se generó un archivo de origen válido.');
         const output=path.join(dir,`vydo.${job.format}`);
@@ -100,7 +115,7 @@ export function createEngine({ytDlp=process.env.YTDLP_BIN||'yt-dlp', ffmpeg=proc
         onProgress({phase:'converting',percent:null});
         try { await execute(ffmpeg,['-nostdin','-hide_banner','-loglevel','error','-y','-i',path.join(dir,files[0]),
           ...codecs[job.format],'-t',String(maxDuration),'-progress','pipe:1','-nostats',output],
-          {signal:controller.signal,timeout,onLine:line=>{
+          {signal:controller.signal,timeout,tool:'ffmpeg',stage:'convert',version:probes?.versions.ffmpeg||null,onLine:line=>{
             if(line.startsWith('out_time_us=')){const time=Number(line.slice(12))/1000000;
               onProgress({phase:'converting',percent:Number.isFinite(time)?Math.min(100,100*time/job.duration):null});}
           }}); } catch(e) { if(!signal?.aborted)e.internal=true;throw e; }

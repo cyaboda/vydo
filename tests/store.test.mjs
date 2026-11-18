@@ -69,3 +69,9 @@ test('session compare-and-swap prevents a concurrent stale refresh from overwrit
  await assert.rejects(store.saveSession('sid','stale','user',Date.now()+100000,version),/otra solicitud/);
  assert.equal((await store.session('sid')).payload,'refreshed');
 });
+
+test('initial profile name is stored safely and never overwrites existing preferences',async t=>{
+ const {store}=await setup(t);assert.equal((await store.profile('name-user','Álex <name>')).name,'Álex <name>');
+ await store.updateProfile('name-user',{name:'Edited',format:'flac',quality:'1080'});const profile=await store.profile('name-user','Different metadata');
+ assert.equal(profile.name,'Edited');assert.equal(profile.format,'flac');assert.equal(profile.quality,'1080');
+});

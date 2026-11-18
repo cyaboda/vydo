@@ -91,7 +91,7 @@ Usa una base aislada de prueba, mantiene el cupo de 5 por ejecución, recupera e
 | --- | --- |
 | `GET /api/health` | Público; herramientas y almacenamiento, 503 si falla |
 | `GET /api/session` | Público; identidad, cuota, disponibilidad de cuentas y anuncio configurado |
-| `POST /api/preview` | Público; `{url, authorized:true}` |
+| `POST /api/preview` | Público; `{url}` |
 | `POST /api/jobs` | Público con cookie de visitante/cuenta; valida vista previa y reserva cuota |
 | `GET /api/jobs/:id` | Solo propietario; estado, progreso y cuota |
 | `DELETE /api/jobs/:id` | Solo propietario; cancelación |

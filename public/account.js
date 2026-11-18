@@ -2,6 +2,33 @@
 (() => {
   const $ = id => document.getElementById(id);
   let session=null, mode='login';
+  let captchaToken='',captchaWidget=null,captchaLoading=null,captchaGeneration=0;
+  function clearCaptcha(){
+    captchaToken='';captchaGeneration++;
+    if(captchaWidget!==null){try{window.turnstile?.remove(captchaWidget);}catch{}captchaWidget=null;}
+    $('account-captcha').replaceChildren();
+  }
+  async function mountCaptcha(){
+    clearCaptcha();if(mode!=='signup')return;
+    const generation=captchaGeneration,config=session?.auth.turnstile;
+    if(!config?.enabled){$('account-message').textContent='La verificación del registro aún no está configurada.';return;}
+    try{
+      if(!window.turnstile){
+        if(!captchaLoading)captchaLoading=new Promise((resolve,reject)=>{
+          const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';script.async=true;
+          script.onload=()=>window.turnstile?.ready?window.turnstile.ready(resolve):reject(Error());
+          script.onerror=()=>{script.remove();reject(Error());};document.head.append(script);
+        }).catch(error=>{captchaLoading=null;throw error;});
+        await captchaLoading;
+      }
+      if(generation!==captchaGeneration||mode!=='signup'||!$('account-dialog').open)return;
+      const current=()=>generation===captchaGeneration&&mode==='signup';
+      captchaWidget=window.turnstile.render($('account-captcha'),{sitekey:config.siteKey,action:'signup',size:'flexible',theme:document.documentElement.dataset.theme||'auto',
+        callback:token=>{if(current())captchaToken=token;},'expired-callback':()=>{if(current())captchaToken='';},
+        'error-callback':()=>{if(current()){captchaToken='';$('account-message').textContent='No se pudo completar la verificación de seguridad. Inténtalo de nuevo.';}},
+        'timeout-callback':()=>{if(current())captchaToken='';}});
+    }catch{if(generation===captchaGeneration)$('account-message').textContent='No se pudo cargar la verificación de seguridad. Revisa tu conexión e inténtalo de nuevo.';}
+  }
   async function request(route,method='GET',data) {
     const response=await fetch(route,{method,headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined});
     const result=await response.json();if(!response.ok)throw Error(result.error||'No se pudo completar la solicitud.');return result;
@@ -36,22 +63,42 @@
     $('account-email').hidden=!email;$('email-label').hidden=!email;$('account-email').required=email;
     $('account-password').hidden=!password;$('account-password-label').hidden=!password;$('account-password').required=password;
     $('account-password').autocomplete=mode==='login'?'current-password':'new-password';$('account-password').value='';
+    const signup=mode==='signup';
+    for(const id of ['account-name','account-name-label','account-confirm-password','account-confirm-label','account-captcha'])$(id).hidden=!signup;
+    $('account-name').required=signup;$('account-confirm-password').required=signup;$('account-confirm-password').value='';
+    $('account-password').type='password';$('account-confirm-password').type='password';
+    $('toggle-password').hidden=!password;$('toggle-password').textContent='Mostrar contraseña';$('toggle-password').setAttribute('aria-pressed','false');
     $('google-sign-in').hidden=!enabled||!session?.auth.google||!['login','signup'].includes(mode);
     $('recover-password').hidden=!enabled||mode!=='login';
     if(!$('account-dialog').open)$('account-dialog').showModal();
+    mountCaptcha();
   }
+  $('toggle-password').addEventListener('click',()=>{
+    const visible=$('account-password').type==='password';
+    $('account-password').type=visible?'text':'password';$('account-confirm-password').type=visible?'text':'password';
+    $('toggle-password').textContent=visible?'Ocultar contraseña':'Mostrar contraseña';$('toggle-password').setAttribute('aria-pressed',String(visible));
+  });
+  $('account-dialog').addEventListener('close',()=>{clearCaptcha();$('account-password').value='';$('account-confirm-password').value='';});
   $('sign-in').addEventListener('click',()=>openAccount('login'));
   $('sign-up').addEventListener('click',()=>openAccount('signup'));
   $('recover-password').addEventListener('click',()=>openAccount('recover'));
   $('account-form').addEventListener('submit',async event=>{
-    event.preventDefault();$('account-submit').disabled=true;$('account-message').textContent='';
+    event.preventDefault();$('account-submit').disabled=true;$('account-message').textContent='';let requested=false;
     try{
-      const result=await request('/api/auth/'+mode,'POST',{email:$('account-email').value,password:$('account-password').value});
+      const data={email:$('account-email').value,password:$('account-password').value};
+      if(mode==='signup'){
+        data.name=$('account-name').value.trim();data.confirmPassword=$('account-confirm-password').value;data.captchaToken=captchaToken;
+        if(!data.name)throw Error('Introduce tu nombre.');
+        if(data.password!==data.confirmPassword)throw Error('Las contraseñas no coinciden.');
+        if(!captchaToken)throw Error('Completa la verificación de seguridad antes de crear tu cuenta.');
+      }
+      requested=true;const result=await request('/api/auth/'+mode,'POST',data);
       $('account-password').value='';
+      $('account-confirm-password').value='';
       if(['login','password'].includes(mode)){$('account-dialog').close();await refresh();}
       else $('account-message').textContent=result.message;
     }catch(error){$('account-message').textContent=error.message;}
-    finally{$('account-submit').disabled=false;}
+    finally{$('account-submit').disabled=false;if(requested&&mode==='signup'&&$('account-dialog').open)mountCaptcha();}
   });
   $('google-sign-in').addEventListener('click',async()=>{
     try{const data=await request('/api/auth/google','POST',{});location.assign(data.url);}catch(error){$('account-message').textContent=error.message;}

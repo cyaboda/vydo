@@ -21,7 +21,6 @@ export function parseYoutubeUrl(raw) {
 }
 export function validateRequest(data) {
   if (!data || typeof data !== 'object') throw new Error('Solicitud inválida.');
-  if (data.authorized !== true) throw new Error('Confirma que tienes autorización para descargar.');
   const url = parseYoutubeUrl(data.url);
   if (!FORMATS.has(data.format)) throw new Error('Formato no compatible.');
   if (!QUALITIES.has(data.quality)) throw new Error('Calidad no compatible.');
@@ -33,6 +32,13 @@ export function secureEqual(a,b){
   return aa.length===bb.length && timingSafeEqual(aa,bb);
 }
 export function token(){return randomBytes(24).toString('hex');}
+
+export function signupName(value){
+  if(typeof value!=='string')throw Error('Introduce tu nombre.');
+  const name=value.trim().normalize('NFC');
+  if(!name||name.length>80||/[\u0000-\u001f\u007f-\u009f]/.test(name))throw Error('El nombre debe tener entre 1 y 80 caracteres, sin caracteres de control.');
+  return name;
+}
 
 // Display name only: never use a video title as an internal path or job identifier.
 export function downloadFilename(title,format){

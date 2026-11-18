@@ -20,11 +20,11 @@ async function api(route,data){const r=await call(route,data);const value=await 
 
 const report={date:new Date().toISOString(),url,results:[]};
 try{
- const {preview}=await api('/api/preview',{url,authorized:true});report.preview=preview;console.log('Preview:',preview.title,preview.qualities);
+ const {preview}=await api('/api/preview',{url});report.preview=preview;console.log('Preview:',preview.title,preview.qualities);
  const requested=(process.env.VYDO_TEST_FORMATS||'mp4:360,mp3').split(',');
  for(const spec of requested){
    const [format,quality='720']=spec.split(':');
-   const {job:started}=await api('/api/jobs',{url,authorized:true,previewId:preview.id,format,quality});
+   const {job:started}=await api('/api/jobs',{url,previewId:preview.id,format,quality});
    let job,phase;
    for(let n=0;n<1300;n++){
      ({job}=await api('/api/jobs/'+started.id));
