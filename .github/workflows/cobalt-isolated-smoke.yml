@@ -1,0 +1,72 @@
+name: Cobalt isolated free smoke test
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/cobalt-isolated-smoke.yml'
+  workflow_dispatch:
+jobs:
+  cobalt-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Run unmodified upstream Cobalt container
+        run: |
+          docker run -d --name cobalt-test --init \
+            -p 127.0.0.1:9000:9000 \
+            -e API_URL=http://127.0.0.1:9000/ \
+            ghcr.io/imputnet/cobalt:11
+          for attempt in $(seq 1 30); do
+            if curl -fsS --max-time 2 http://127.0.0.1:9000/ >/dev/null; then
+              echo "Cobalt API healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs cobalt-test --tail 80
+          exit 1
+      - name: Check authorized Creative Commons source
+        run: |
+          node --input-type=module <<'NODE'
+          // Blender Foundation, Big Buck Bunny, CC BY 3.0:
+          // https://peach.blender.org/about/
+          const source = 'https://www.youtube.com/watch?v=YE7VzlLtp-4';
+          const response = await fetch('http://127.0.0.1:9000/', {
+            method: 'POST',
+            headers: {'accept':'application/json', 'content-type':'application/json'},
+            body: JSON.stringify({url: source, videoQuality: '360',
+              youtubeVideoContainer: 'mp4', downloadMode:'auto'})
+          });
+          const data = await response.json();
+          const status = String(data.status || 'missing');
+          const error = data.error?.code || data.error?.message || null;
+          console.log(JSON.stringify({apiHttp:response.status,status,error,filename:data.filename || null}));
+          if (!response.ok || !['tunnel','redirect'].includes(status) || !data.url) {
+            console.error('FAIL: Cobalt did not provide a directly fetchable media URL.');
+            process.exitCode = 1;
+          } else {
+            // Bounded media verification: read only first 64 KiB, no full movie copied.
+            const controller = new AbortController();
+            const timer = setTimeout(()=>controller.abort(), 25000);
+            let received = 0; let mediaHttp = null; let mediaType = null;
+            try {
+              const media = await fetch(data.url,{signal:controller.signal,redirect:'follow'});
+              mediaHttp = media.status; mediaType = media.headers.get('content-type');
+              if (!media.ok) throw Error('Media HTTP '+media.status);
+              const reader = media.body.getReader();
+              while(received<65536) {
+                const {done,value}=await reader.read();
+                if(done) break;
+                received += value.byteLength;
+              }
+              await reader.cancel();
+              console.log(JSON.stringify({mediaHttp,mediaType,receivedBytes:received,partialDownloadValidated:received>0}));
+              if (received===0) process.exitCode=1;
+            } catch(e) {
+              console.error('FAIL: media response: '+e.message);
+              process.exitCode=1;
+            } finally {clearTimeout(timer);controller.abort();}
+          }
+          NODE
+      - name: Final logs for diagnostics
+        if: always()
+        run: docker logs cobalt-test --tail 35 || true
